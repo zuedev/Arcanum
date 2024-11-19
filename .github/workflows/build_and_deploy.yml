@@ -1,0 +1,42 @@
+name: build and deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions: write-all
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Login to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build and push
+        run: |
+          REPO_LOWERCASE=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')
+          TAG_BASE=ghcr.io/$REPO_LOWERCASE
+
+          docker build . -t $TAG_BASE:${{ github.sha }}
+
+          docker tag $TAG_BASE:${{ github.sha }} $TAG_BASE:${{ github.ref_name }}
+          docker tag $TAG_BASE:${{ github.sha }} $TAG_BASE:latest
+
+          docker push --all-tags $TAG_BASE
+
+  deploy_bot_via_webhook:
+    runs-on: ubuntu-latest
+
+    env:
+      PORTAINER_WEBHOOK: ${{ secrets.PORTAINER_WEBHOOK }}
+
+    steps:
+      - name: Install curl
+        run: sudo apt-get install curl
+
+      - name: Trigger Portainer Webhook
+        run: curl -X POST $PORTAINER_WEBHOOK
