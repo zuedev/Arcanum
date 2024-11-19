@@ -28,7 +28,8 @@ jobs:
 
           docker push --all-tags $TAG_BASE
 
-  deploy_bot_via_webhook:
+  deploy:
+    depends-on: build
     runs-on: ubuntu-latest
 
     env:
