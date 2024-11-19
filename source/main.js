@@ -1,5 +1,3 @@
-import "dotenv/config";
-
 import {
   Client,
   GatewayIntentBits,
@@ -8,8 +6,13 @@ import {
   ActivityType,
   Routes,
 } from "discord.js";
-
 import { readdirSync } from "fs";
+
+// check required environment variables are set
+["ENVIRONMENT", "DISCORD_BOT_TOKEN", "MONGODB_URI"].forEach((env) => {
+  if (!process.env[env])
+    throw new Error(`Environment variable ${env} is required!`);
+});
 
 const client = new Client({
   intents: Object.values(GatewayIntentBits),
@@ -35,12 +38,16 @@ client.on(Events.ClientReady, async () => {
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isCommand()) return;
 
+  // strip dev- prefix from dev commands
+  if (process.env.DEVELOPMENT_GUILD_ID)
+    interaction.commandName = interaction.commandName.replace("dev-", "");
+
   try {
     (
       await import(`./InteractionCreate.Commands/${interaction.commandName}.js`)
     ).default.execute({ interaction });
   } catch (error) {
-    log(error);
+    console.error(error);
     interaction.reply("I couldn't execute that command.");
   }
 });
@@ -89,8 +96,11 @@ async function registerCommands({ client }) {
 
   if (process.env.DEVELOPMENT_GUILD_ID) {
     console.log(
-      "Development guild ID set, registering slash commands there and clearing global commands."
+      "Development guild ID set, registering slash commands there with dev- prefix."
     );
+
+    // add dev- prefix to command names
+    commands.forEach((c) => (c.name = `dev-${c.name}`));
 
     await client.rest.put(
       Routes.applicationGuildCommands(

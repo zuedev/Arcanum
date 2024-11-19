@@ -1,33 +1,23 @@
-<img src="avatar.png" width="128" height="128">
+<img src="avatar.png" height="100">
 
-# LootTrackerDiscordBot
+# Arcanum
 
-> A Discord bot that tracks loot, best used for TTRPGs like D&D.
-
-## Install
-
-We have a public instance of this bot available here: https://discord.com/oauth2/authorize?client_id=1274868942753628210&permissions=8&integration_type=0&scope=bot
-
-Otherwise, you can run your own instance of the bot by following these steps:
-
-1. Clone the repository
-2. Copy the contents of `.env.example` into a new file called `.env` and fill in the values
-3. Run the bot with `docker-compose up -d -f docker-compose.dev.yml`
+> An all-in-one Discord bot for running TTRPG games online.
 
 ## Usage
 
-The bot currently uses messages to track loot. You need to mention it at the start of the message, and then use the `help` command to see the available commands.
+Firstly, you need to invite the bot to your server. You can do this by using our public instance of the bot here: https://discord.com/oauth2/authorize?client_id=1274868942753628210
 
 ## Development
 
-The following features are planned:
+<!-- Whatever you want to say about the development of the project -->
 
-- [x] Basic functionality using messages
-- [x] Add a database for persistent storage
-- [x] Command for clearing all loot (requires moderation permissions for channel)
-- [x] Command for listing all loot
-- [ ] Better responses (no more reactions)
-- [x] Allow strings with spaces in loot names
-- [x] Add an audit log for all loot changes
-- [x] Use slash commands for better UX
-- [ ] Add a web interface for easier loot tracking
+### Mirrors
+
+This repository uses mirrors!
+
+The primary host is: https://gitlab.sovereign.zue.dev/zuedev/Arcanum
+
+Official mirrors are:
+
+- [GitHub](https://gitlab.com/zuedev/Arcanum)

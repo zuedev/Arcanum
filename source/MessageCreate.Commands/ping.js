@@ -1,1 +1,3 @@
-export default async ({ message }) => await message.reply("Pong!");
+export default async ({ message }) => {
+  return await message.reply("Pong!");
+};
