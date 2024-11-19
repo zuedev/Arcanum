@@ -1,10 +1,12 @@
 {
   "scripts": {
     "start": "node source/main.js",
-    "dev": "node --watch --env-file=.env source/main.js"
+    "dev": "node --watch --env-file=.env source/main.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },
   "dependencies": {
     "discord.js": "^14.15.3",
+    "jest": "^29.7.0",
     "mongodb": "^6.8.0"
   },
   "type": "module"

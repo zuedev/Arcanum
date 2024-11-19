@@ -38,9 +38,9 @@ client.on(Events.ClientReady, async () => {
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isCommand()) return;
 
-  // strip dev- prefix from dev commands
+  // ignore non-dev commands in dev guild
   if (process.env.DEVELOPMENT_GUILD_ID)
-    interaction.commandName = interaction.commandName.replace("dev-", "");
+    if (interaction.guild.id !== process.env.DEVELOPMENT_GUILD_ID) return;
 
   try {
     (
@@ -57,6 +57,10 @@ client.on(Events.MessageCreate, async (message) => {
 
   if (!message.guild)
     return message.reply("I can only be used in servers right now, sorry! D:");
+
+  // ignore non-dev commands in dev guild
+  if (process.env.DEVELOPMENT_GUILD_ID)
+    if (message.guild.id !== process.env.DEVELOPMENT_GUILD_ID) return;
 
   const prefix = `<@${client.user.id}>`;
 
@@ -96,11 +100,8 @@ async function registerCommands({ client }) {
 
   if (process.env.DEVELOPMENT_GUILD_ID) {
     console.log(
-      "Development guild ID set, registering slash commands there with dev- prefix."
+      "Development guild ID set, registering slash commands there instead."
     );
-
-    // add dev- prefix to command names
-    commands.forEach((c) => (c.name = `dev-${c.name}`));
 
     await client.rest.put(
       Routes.applicationGuildCommands(
