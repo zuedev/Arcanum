@@ -1,10 +1,9 @@
 import {
   Client,
-  GatewayIntentBits,
   Events,
-  Partials,
   ActivityType,
   Routes,
+  GatewayIntentBits,
 } from "discord.js";
 import { readdirSync } from "fs";
 
@@ -15,8 +14,7 @@ import { readdirSync } from "fs";
 });
 
 const client = new Client({
-  intents: Object.values(GatewayIntentBits),
-  partials: Object.values(Partials),
+  intents: [GatewayIntentBits.Guilds],
 });
 
 client.on(Events.ClientReady, async () => {
@@ -49,36 +47,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
   } catch (error) {
     console.error(error);
     interaction.reply("I couldn't execute that command.");
-  }
-});
-
-client.on(Events.MessageCreate, async (message) => {
-  if (message.author.bot) return;
-
-  if (!message.guild)
-    return message.reply("I can only be used in servers right now, sorry! D:");
-
-  // ignore non-dev commands in dev guild
-  if (process.env.DEVELOPMENT_GUILD_ID)
-    if (message.guild.id !== process.env.DEVELOPMENT_GUILD_ID) return;
-
-  const prefix = `<@${client.user.id}>`;
-
-  if (message.content.startsWith(prefix)) {
-    try {
-      const [command, ...args] = message.content
-        .slice(prefix.length)
-        .trim()
-        .split(" ");
-
-      (await import(`./MessageCreate.Commands/${command}.js`)).default({
-        message,
-        args,
-      });
-    } catch (error) {
-      console.log(error);
-      message.channel.send("That command does not exist.");
-    }
   }
 });
 

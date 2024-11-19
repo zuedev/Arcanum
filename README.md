@@ -2,7 +2,7 @@
 
 # Arcanum
 
-> An all-in-one Discord bot for running TTRPG games online.
+> An open-source Discord bot for running TTRPG games.
 
 ## Usage
 
