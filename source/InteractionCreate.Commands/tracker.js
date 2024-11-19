@@ -65,7 +65,7 @@ export default {
 };
 
 async function add({ interaction }) {
-  const name = interaction.options.getString("name");
+  const name = interaction.options.getString("name").toLowerCase();
   const quantity = interaction.options.getInteger("quantity");
 
   if (quantity < 1 || !Number.isInteger(quantity))
@@ -97,7 +97,7 @@ async function add({ interaction }) {
 }
 
 async function remove({ interaction }) {
-  const name = interaction.options.getString("name");
+  const name = interaction.options.getString("name").toLowerCase();
   const quantity = interaction.options.getInteger("quantity");
 
   if (quantity < 1 || !Number.isInteger(quantity))
