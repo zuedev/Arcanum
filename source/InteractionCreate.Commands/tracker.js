@@ -1,3 +1,4 @@
+import { PermissionFlagsBits } from "discord.js";
 import { SlashCommandBuilder } from "@discordjs/builders";
 import { connect } from "../controllers/mongo.js";
 
@@ -43,6 +44,11 @@ export default {
       subcommand
         .setName("list")
         .setDescription("List all the things in the tracker")
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("clear")
+        .setDescription("Clear all the things from the tracker")
     ),
   async execute({ interaction }) {
     const subcommand = interaction.options.getSubcommand();
@@ -56,6 +62,9 @@ export default {
         break;
       case "list":
         await list({ interaction });
+        break;
+      case "clear":
+        await clear({ interaction });
         break;
       default:
         await interaction.reply("This subcommand is not supported.");
@@ -191,4 +200,27 @@ async function list({ interaction }) {
   }
 
   await interaction.reply(message);
+}
+
+async function clear({ interaction }) {
+  // check if the user has the MANAGE_CHANNELS permission
+  if (
+    !interaction.channel
+      .permissionsFor(interaction.member)
+      .has(PermissionFlagsBits.ManageChannels)
+  )
+    return await interaction.reply(
+      "You must have the `MANAGE_CHANNELS` permission to clear the tracker."
+    );
+
+  const mongo = await connect();
+
+  await mongo
+    .db(process.env.ENVIRONMENT)
+    .collection("trackers")
+    .deleteMany({ channel: interaction.channel.id });
+
+  await mongo.close();
+
+  await interaction.reply("All items have been cleared from the tracker.");
 }
