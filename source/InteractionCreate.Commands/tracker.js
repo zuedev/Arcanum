@@ -87,13 +87,25 @@ async function add({ interaction }) {
       { upsert: true, returnDocument: "after" }
     );
 
-  await mongo.close();
+  // if the new quantity is 0, remove the document
+  if (data.quantity === 0) {
+    await mongo
+      .db(process.env.ENVIRONMENT)
+      .collection("trackers")
+      .deleteOne({ channel: interaction.channel.id, name });
 
-  await interaction.reply(
-    `Changed the quantity of **${name}** from \`${
-      data.quantity - quantity
-    }\` to \`${data.quantity}\`.`
-  );
+    await interaction.reply(
+      `Changed the quantity of **${name}** from \`${
+        data.quantity - quantity
+      }\` to \`0\`. Removed the item from the tracker.`
+    );
+  } else {
+    await interaction.reply(
+      `Changed the quantity of **${name}** from \`${
+        data.quantity - quantity
+      }\` to \`${data.quantity}\`.`
+    );
+  }
 }
 
 async function remove({ interaction }) {
@@ -119,13 +131,27 @@ async function remove({ interaction }) {
       { upsert: true, returnDocument: "after" }
     );
 
-  await mongo.close();
+  // if the new quantity is 0, remove the document
+  if (data.quantity === 0) {
+    await mongo
+      .db(process.env.ENVIRONMENT)
+      .collection("trackers")
+      .deleteOne({ channel: interaction.channel.id, name });
 
-  await interaction.reply(
-    `Changed the quantity of **${name}** from \`${
-      data.quantity + quantity
-    }\` to \`${data.quantity}\`.`
-  );
+    await interaction.reply(
+      `Changed the quantity of **${name}** from \`${
+        data.quantity + quantity
+      }\` to \`0\`. Removed the item from the tracker.`
+    );
+  } else {
+    await interaction.reply(
+      `Changed the quantity of **${name}** from \`${
+        data.quantity + quantity
+      }\` to \`${data.quantity}\`.`
+    );
+  }
+
+  await mongo.close();
 }
 
 async function list({ interaction }) {
