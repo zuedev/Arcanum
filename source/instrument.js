@@ -13,12 +13,10 @@ if (process.env.SENTRY_DSN) {
     dsn: process.env.SENTRY_DSN,
     integrations: [nodeProfilingIntegration()],
     tracesSampleRate: 1.0,
+    profilesSampleRate: 1.0,
     environment: process.env.ENVIRONMENT,
     release: `arcanum@${version}+${commit}`,
   });
-
-  // start profiling
-  Sentry.profiler.startProfiler();
 } else {
   console.log("No Sentry DSN provided, skipping Sentry setup.");
 }

@@ -6,6 +6,7 @@ import {
   GatewayIntentBits,
 } from "discord.js";
 import { readdirSync } from "fs";
+import * as Sentry from "@sentry/node";
 
 export default async () => {
   const client = new Client({
@@ -29,22 +30,36 @@ export default async () => {
   });
 
   client.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.isCommand()) return;
+    Sentry.startSpan(
+      {
+        op: `Events.InteractionCreate`,
+        name: `InteractionCreate: ${interaction.commandName}`,
+        attributes: {
+          commandName: interaction.commandName,
+          guildId: interaction.guildId,
+          channelId: interaction.channelId,
+          userId: interaction.user?.id,
+        },
+      },
+      async () => {
+        if (!interaction.isCommand()) return;
 
-    // ignore non-dev commands in dev guild
-    if (process.env.DEVELOPMENT_GUILD_ID)
-      if (interaction.guild.id !== process.env.DEVELOPMENT_GUILD_ID) return;
+        // ignore non-dev commands in dev guild
+        if (process.env.DEVELOPMENT_GUILD_ID)
+          if (interaction.guild.id !== process.env.DEVELOPMENT_GUILD_ID) return;
 
-    try {
-      (
-        await import(
-          `./InteractionCreate.Commands/${interaction.commandName}.js`
-        )
-      ).default.execute({ interaction });
-    } catch (error) {
-      console.error(error);
-      interaction.reply("I couldn't execute that command.");
-    }
+        try {
+          (
+            await import(
+              `./InteractionCreate.Commands/${interaction.commandName}.js`
+            )
+          ).default.execute({ interaction });
+        } catch (error) {
+          console.error(error);
+          interaction.reply("I couldn't execute that command.");
+        }
+      }
+    );
   });
 
   await client.login(process.env.DISCORD_BOT_TOKEN);
