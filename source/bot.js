@@ -6,7 +6,6 @@ import {
   GatewayIntentBits,
 } from "discord.js";
 import { readdirSync } from "fs";
-import * as Sentry from "@sentry/node";
 
 export default async () => {
   const client = new Client({
