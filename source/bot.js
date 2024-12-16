@@ -58,6 +58,8 @@ export default async () => {
           console.error(error);
           interaction.reply("I couldn't execute that command.");
         }
+
+        console.log(Sentry.getActiveSpan());
       }
     );
   });

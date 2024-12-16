@@ -17,6 +17,8 @@ if (process.env.SENTRY_DSN) {
     environment: process.env.ENVIRONMENT,
     release: `arcanum@${version}+${commit}`,
   });
+
+  console.log("Sentry initialized.");
 } else {
   console.log("No Sentry DSN provided, skipping Sentry setup.");
 }
