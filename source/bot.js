@@ -18,6 +18,24 @@ export default async () => {
       name: "my boot logs",
     });
 
+    if (process.env.DND_DATA_DIR)
+      try {
+        console.log(`D&D data directory set: ${process.env.DND_DATA_DIR}`);
+        console.log(`Attempting to load D&D data into memory...`);
+
+        process.dnd ??= {
+          items: (
+            await import(`../${process.env.DND_DATA_DIR}/items.json`, {
+              with: { type: "json" },
+            })
+          ).default.item,
+        };
+
+        console.log(`${process.dnd.items.length} items loaded.`);
+      } catch (error) {
+        console.error(`Failed to load D&D data: ${error.message}`);
+      }
+
     await registerCommands({ client });
 
     console.log(`Bot has started! Logged in as ${client.user.tag}`);
@@ -52,9 +70,13 @@ export default async () => {
   async function registerCommands({ client }) {
     const commands = [];
 
-    const commandFiles = readdirSync(
+    let commandFiles = readdirSync(
       "./source/InteractionCreate.Commands"
     ).filter((file) => file.endsWith(".js"));
+
+    // remove lookup.js if we don't have dnd data
+    if (!process.dnd)
+      commandFiles = commandFiles.filter((file) => file !== "lookup.js");
 
     for (const file of commandFiles) {
       const { data } = (await import(`./InteractionCreate.Commands/${file}`))
