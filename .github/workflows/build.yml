@@ -1,4 +1,4 @@
-name: build and deploy
+name: build
 
 on:
   push:
@@ -29,17 +29,3 @@ jobs:
           docker tag $TAG_BASE:${{ github.sha }} $TAG_BASE:latest
 
           docker push --all-tags $TAG_BASE
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-
-    env:
-      PORTAINER_WEBHOOK: ${{ secrets.PORTAINER_WEBHOOK }}
-
-    steps:
-      - name: Install curl
-        run: sudo apt-get install curl
-
-      - name: Trigger Portainer Webhook
-        run: curl -X POST $PORTAINER_WEBHOOK
