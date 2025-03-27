@@ -18,7 +18,7 @@ export default async () => {
       name: "my boot logs",
     });
 
-    if (process.env.DND_DATA_DIR)
+    if (process.env.DND_DATA_DIR) {
       try {
         console.log(`D&D data directory set: ${process.env.DND_DATA_DIR}`);
         console.log(`Attempting to load D&D data into memory...`);
@@ -35,6 +35,30 @@ export default async () => {
       } catch (error) {
         console.error(`Failed to load D&D data: ${error.message}`);
       }
+    }
+
+    if (!process.dnd && process.env.DND_DATA_BASE_URL) {
+      try {
+        console.log(
+          `D&D data directory not set or failed to load, but we have a data url: ${process.env.DND_DATA_URL}`
+        );
+        console.log(
+          `Attempting to load D&D data into memory from URL alone...`
+        );
+
+        process.dnd ??= {
+          items: (
+            await fetch(
+              process.env.DND_DATA_BASE_URL + "/data/items.json"
+            ).then((res) => res.json())
+          ).item,
+        };
+
+        console.log(`${process.dnd.items.length} items loaded.`);
+      } catch (error) {
+        console.error(`Failed to load D&D data from URL: ${error.message}`);
+      }
+    }
 
     await registerCommands({ client });
 
