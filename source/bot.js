@@ -40,7 +40,7 @@ export default async () => {
     if (!process.dnd && process.env.DND_DATA_BASE_URL) {
       try {
         console.log(
-          `D&D data directory not set or failed to load, but we have a data url: ${process.env.DND_DATA_URL}`
+          `D&D data directory not set or failed to load, but we have a data url: ${process.env.DND_DATA_BASE_URL}`
         );
         console.log(
           `Attempting to load D&D data into memory from URL alone...`
