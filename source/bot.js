@@ -24,6 +24,13 @@ export default async () => {
 
     console.log(`Bot has started! Logged in as ${client.user.tag}`);
 
+    console.table({
+      "Bot Tag": client.user.tag,
+      "Bot ID": client.user.id,
+      "Guilds Count": client.guilds.cache.size,
+      "Users Count": client.users.cache.size,
+    });
+
     client.user.setActivity({
       type: ActivityType.Playing,
       name: "with my dice...",
