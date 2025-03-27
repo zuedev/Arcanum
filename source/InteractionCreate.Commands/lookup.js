@@ -17,6 +17,19 @@ if (process.dnd.items)
       )
   );
 
+if (process.dnd.bestiary)
+  data = data.addSubcommand((subcommand) =>
+    subcommand
+      .setName("monster")
+      .setDescription("Lookup a specific monster")
+      .addStringOption((option) =>
+        option
+          .setName("name")
+          .setDescription("The monster name to lookup")
+          .setRequired(true)
+      )
+  );
+
 export default {
   data,
   async execute({ interaction }) {
@@ -25,6 +38,10 @@ export default {
     switch (subcommand) {
       case "item":
         await lookupItem(interaction);
+        break;
+
+      case "monster":
+        await lookupMonster(interaction);
         break;
 
       default:
@@ -138,6 +155,98 @@ async function lookupItem(interaction) {
           i.source
         }/${encodeURIComponent(
           i.name.replace(/'/g, "").replace(/^\+\d+\s/, "")
+        )}.webp`
+      );
+
+    embeds.push(embed);
+  }
+
+  await interaction.reply({ embeds });
+}
+
+async function lookupMonster(interaction) {
+  const monsterName = interaction.options.getString("name");
+
+  const monster = process.dnd.bestiary.filter(
+    (m) => m.name.toLowerCase() === monsterName.toLowerCase()
+  );
+
+  if (monster.length === 0) {
+    let bestMatches = [];
+
+    for (const m of process.dnd.bestiary) {
+      const similarity = calculateSimilarity(
+        m.name.toLowerCase(),
+        monsterName.toLowerCase()
+      );
+
+      if (similarity >= 0.5) bestMatches.push({ monster: m, similarity });
+    }
+
+    if (bestMatches.length === 0)
+      return await interaction.reply(
+        `I couldn't find the monster: \`${monsterName}\``
+      );
+
+    bestMatches.sort((a, b) => b.similarity - a.similarity);
+
+    // remove duplicates
+    bestMatches = bestMatches.filter(
+      (v, i, a) => a.findIndex((t) => t.monster.name === v.monster.name) === i
+    );
+
+    return await interaction.reply(
+      `I couldn't find that monster, did you mean one of these?\n${bestMatches
+        .slice(0, 9)
+        .map((m) => `- ${m.monster.name} (${(m.similarity * 100).toFixed(2)}%)`)
+        .join("\n")}`
+    );
+  }
+
+  const embeds = [];
+
+  for (const m of monster) {
+    let embed = new EmbedBuilder();
+
+    let title = m.name;
+    if (m.reprintedAs) title += ` (Legacy)`;
+    embed.setTitle(title);
+
+    if (m.hasFluff) {
+      // look up fluff in bestiaryFluff data
+      const fluff = process.dnd.bestiaryFluff.find(
+        (f) => f.name.toLowerCase() === m.name.toLowerCase()
+      );
+
+      if (fluff) {
+        embed.setDescription(
+          fluff.entries[0].entries[0].entries[0].replace(
+            /\{@\w+ ([^|]+)\|[^}]+\}/g,
+            "$1"
+          )
+        );
+      } else {
+        embed.setDescription(
+          "No description available. My Devs have been informed of this issue and will fix it soon."
+        );
+
+        console.error(`No description available for monster: ${m.name}`);
+      }
+    }
+
+    let footer = [];
+    if (m.source) footer.push(`Source: ${m.source}`);
+    if (m.page) footer.push(`page ${m.page}`);
+    embed.setFooter({
+      text: footer.join(", "),
+    });
+
+    if (process.env.DND_DATA_BASE_URL && m.source && m.hasFluffImages)
+      embed.setImage(
+        `${process.env.DND_DATA_BASE_URL}/img/bestiary/${
+          m.source
+        }/${encodeURIComponent(
+          m.name.replace(/'/g, "").replace(/^\+\d+\s/, "")
         )}.webp`
       );
 
