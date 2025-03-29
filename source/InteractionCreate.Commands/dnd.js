@@ -1,51 +1,59 @@
 import { SlashCommandBuilder, EmbedBuilder } from "@discordjs/builders";
 
 let data = new SlashCommandBuilder()
-  .setName("lookup")
-  .setDescription("Lookup an item from D&D");
+  .setName("dnd")
+  .setDescription("Do stuff with D&D data");
 
-if (process.dnd.items)
-  data = data.addSubcommand((subcommand) =>
-    subcommand
-      .setName("item")
-      .setDescription("Lookup a specific item")
-      .addStringOption((option) =>
-        option
-          .setName("name")
-          .setDescription("The item name to lookup")
-          .setRequired(true)
-      )
-  );
+if (process.dnd)
+  data = data.addSubcommandGroup((subcommandGroup) => {
+    subcommandGroup.setName("lookup").setDescription("Lookup D&D data");
 
-if (process.dnd.bestiary)
-  data = data.addSubcommand((subcommand) =>
-    subcommand
-      .setName("monster")
-      .setDescription("Lookup a specific monster")
-      .addStringOption((option) =>
-        option
-          .setName("name")
-          .setDescription("The monster name to lookup")
-          .setRequired(true)
-      )
-  );
+    if (process.dnd.items)
+      subcommandGroup.addSubcommand((subcommand) =>
+        subcommand
+          .setName("item")
+          .setDescription("Lookup a specific item")
+          .addStringOption((option) =>
+            option
+              .setName("name")
+              .setDescription("The item name to lookup")
+              .setRequired(true)
+          )
+      );
+
+    if (process.dnd.bestiary)
+      subcommandGroup.addSubcommand((subcommand) =>
+        subcommand
+          .setName("monster")
+          .setDescription("Lookup a specific monster")
+          .addStringOption((option) =>
+            option
+              .setName("name")
+              .setDescription("The monster name to lookup")
+              .setRequired(true)
+          )
+      );
+
+    return subcommandGroup;
+  });
 
 export default {
   data,
   async execute({ interaction }) {
+    const subcommandGroup = interaction.options.getSubcommandGroup();
     const subcommand = interaction.options.getSubcommand();
 
-    switch (subcommand) {
-      case "item":
-        await lookupItem(interaction);
+    switch (subcommandGroup) {
+      case "lookup":
+        switch (subcommand) {
+          case "item":
+            await lookupItem(interaction);
+            break;
+          case "monster":
+            await lookupMonster(interaction);
+            break;
+        }
         break;
-
-      case "monster":
-        await lookupMonster(interaction);
-        break;
-
-      default:
-        return await interaction.reply("I couldn't execute that command.");
     }
   },
 };
