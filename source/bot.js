@@ -27,9 +27,23 @@ export default async () => {
     console.table({
       "Bot Tag": client.user.tag,
       "Bot ID": client.user.id,
-      "Guilds Count": client.guilds.cache.size,
-      "Users Count": client.users.cache.size,
+      "Guilds Cache Size": client.guilds.cache.size,
+      "Users Cache Size": client.users.cache.size,
+      "Guilds Cache Member Cache Total": client.guilds.cache.reduce(
+        (acc, guild) => acc + guild.memberCount,
+        0
+      ),
     });
+
+    console.table(
+      client.guilds.cache.map((guild) => {
+        return {
+          "Guild Name": guild.name,
+          "Guild ID": guild.id,
+          "Guild Member Count": guild.memberCount,
+        };
+      })
+    );
 
     client.user.setActivity({
       type: ActivityType.Playing,
