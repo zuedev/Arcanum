@@ -79,9 +79,16 @@ export default async () => {
       "./source/InteractionCreate.Commands"
     ).filter((file) => file.endsWith(".js"));
 
-    // remove lookup.js if we don't have dnd data
+    // remove dnd.js if we don't have dnd data
     if (!process.dnd)
-      commandFiles = commandFiles.filter((file) => file !== "lookup.js");
+      commandFiles = commandFiles.filter((file) => file !== "dnd.js");
+
+    // remove alchemy.js if we don't have ENABLE_HOMEBREW_CONTENT set to true
+    if (
+      !process.env.ENABLE_HOMEBREW_CONTENT ||
+      process.env.ENABLE_HOMEBREW_CONTENT !== "true"
+    )
+      commandFiles = commandFiles.filter((file) => file !== "alchemy.js");
 
     for (const file of commandFiles) {
       const { data } = (await import(`./InteractionCreate.Commands/${file}`))
