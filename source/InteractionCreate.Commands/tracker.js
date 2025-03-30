@@ -1,6 +1,7 @@
 import { PermissionFlagsBits } from "discord.js";
 import { SlashCommandBuilder } from "@discordjs/builders";
 import { connect } from "../controllers/mongo.js";
+import calculateSimilarity from "../utilities/calculateSimilarity.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -49,6 +50,17 @@ export default {
       subcommand
         .setName("clear")
         .setDescription("Clear all the things from the tracker")
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("search")
+        .setDescription("Search for an item in the tracker")
+        .addStringOption((option) =>
+          option
+            .setName("name")
+            .setDescription("The name of the thing to search for")
+            .setRequired(true)
+        )
     ),
   async execute({ interaction }) {
     const subcommand = interaction.options.getSubcommand();
@@ -65,6 +77,9 @@ export default {
         break;
       case "clear":
         await clear({ interaction });
+        break;
+      case "search":
+        await search({ interaction });
         break;
       default:
         await interaction.reply("This subcommand is not supported.");
@@ -223,4 +238,34 @@ async function clear({ interaction }) {
   await mongo.close();
 
   await interaction.reply("All items have been cleared from the tracker.");
+}
+
+async function search({ interaction }) {
+  const name = interaction.options.getString("name").toLowerCase();
+
+  const mongo = await connect();
+
+  const data = await mongo
+    .db(process.env.ENVIRONMENT)
+    .collection("trackers")
+    .find({ channel: interaction.channel.id })
+    .toArray();
+
+  await mongo.close();
+
+  if (!data.length) return await interaction.reply("The tracker is empty.");
+
+  const results = data.filter(
+    (item) =>
+      calculateSimilarity(name, item.name) > 0.5 || item.name.includes(name)
+  );
+
+  if (!results.length)
+    return await interaction.reply(`No items found for: **${name}**`);
+
+  const message = results
+    .map((item) => `**${item.name}**: ${item.quantity}`)
+    .join("\n");
+
+  await interaction.reply(message);
 }
