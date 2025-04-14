@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from "@discordjs/builders";
+import { SlashCommandBuilder } from "discord.js";
 import alchemy from "../data/alchemy/index.js";
 import calculateSimilarity from "../utilities/calculateSimilarity.js";
 

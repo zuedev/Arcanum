@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder } from "@discordjs/builders";
+import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 import calculateSimilarity from "../utilities/calculateSimilarity.js";
 
 let data = new SlashCommandBuilder()

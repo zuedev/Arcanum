@@ -1,5 +1,4 @@
-import { PermissionFlagsBits } from "discord.js";
-import { SlashCommandBuilder } from "@discordjs/builders";
+import { SlashCommandBuilder, PermissionFlagsBits } from "discord.js";
 import { connect } from "../controllers/mongo.js";
 import calculateSimilarity from "../utilities/calculateSimilarity.js";
 
