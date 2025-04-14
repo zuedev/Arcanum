@@ -59,12 +59,12 @@ async function lookupIngredient(interaction) {
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, 5);
 
-    return await interaction.reply(
+    return await interaction.followUp(
       `I couldn't find that ingredient. Did you mean one of these?\n${similar
         .map((s) => "- " + s.ingredient.name)
         .join("\n")}`
     );
   }
 
-  await interaction.reply(`# ${ingredient.name}\n${ingredient.description}`);
+  await interaction.followUp(`# ${ingredient.name}\n${ingredient.description}`);
 }

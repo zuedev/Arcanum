@@ -81,7 +81,7 @@ export default {
         await search({ interaction });
         break;
       default:
-        await interaction.reply("This subcommand is not supported.");
+        await interaction.followUp("This subcommand is not supported.");
         break;
     }
   },
@@ -92,7 +92,7 @@ async function add({ interaction }) {
   const quantity = interaction.options.getInteger("quantity");
 
   if (quantity < 1 || !Number.isInteger(quantity))
-    return await interaction.reply(
+    return await interaction.followUp(
       "The quantity must be an integer greater than 0."
     );
 
@@ -117,13 +117,13 @@ async function add({ interaction }) {
       .collection("trackers")
       .deleteOne({ channel: interaction.channel.id, name });
 
-    await interaction.reply(
+    await interaction.followUp(
       `Changed the quantity of **${name}** from \`${
         data.quantity - quantity
       }\` to \`0\`. Removed the item from the tracker.`
     );
   } else {
-    await interaction.reply(
+    await interaction.followUp(
       `Changed the quantity of **${name}** from \`${
         data.quantity - quantity
       }\` to \`${data.quantity}\`.`
@@ -136,7 +136,7 @@ async function remove({ interaction }) {
   const quantity = interaction.options.getInteger("quantity");
 
   if (quantity < 1 || !Number.isInteger(quantity))
-    return await interaction.reply(
+    return await interaction.followUp(
       "The quantity must be an integer greater than 0."
     );
 
@@ -161,13 +161,13 @@ async function remove({ interaction }) {
       .collection("trackers")
       .deleteOne({ channel: interaction.channel.id, name });
 
-    await interaction.reply(
+    await interaction.followUp(
       `Changed the quantity of **${name}** from \`${
         data.quantity + quantity
       }\` to \`0\`. Removed the item from the tracker.`
     );
   } else {
-    await interaction.reply(
+    await interaction.followUp(
       `Changed the quantity of **${name}** from \`${
         data.quantity + quantity
       }\` to \`${data.quantity}\`.`
@@ -188,7 +188,7 @@ async function list({ interaction }) {
 
   await mongo.close();
 
-  if (!data.length) return await interaction.reply("The tracker is empty.");
+  if (!data.length) return await interaction.followUp("The tracker is empty.");
 
   const message = data
     .map((item) => `**${item.name}**: ${item.quantity}`)
@@ -201,7 +201,7 @@ async function list({ interaction }) {
       dataJSON[item.name] = item.quantity;
     });
 
-    return await interaction.reply({
+    return await interaction.followUp({
       content:
         "The tracker is too large to be displayed in a single message, so here is a JSON file instead.",
       files: [
@@ -213,7 +213,7 @@ async function list({ interaction }) {
     });
   }
 
-  await interaction.reply(message);
+  await interaction.followUp(message);
 }
 
 async function clear({ interaction }) {
@@ -223,7 +223,7 @@ async function clear({ interaction }) {
       .permissionsFor(interaction.member)
       .has(PermissionFlagsBits.ManageChannels)
   )
-    return await interaction.reply(
+    return await interaction.followUp(
       "You must have the `MANAGE_CHANNELS` permission to clear the tracker."
     );
 
@@ -236,7 +236,7 @@ async function clear({ interaction }) {
 
   await mongo.close();
 
-  await interaction.reply("All items have been cleared from the tracker.");
+  await interaction.followUp("All items have been cleared from the tracker.");
 }
 
 async function search({ interaction }) {
@@ -252,7 +252,7 @@ async function search({ interaction }) {
 
   await mongo.close();
 
-  if (!data.length) return await interaction.reply("The tracker is empty.");
+  if (!data.length) return await interaction.followUp("The tracker is empty.");
 
   const results = data.filter(
     (item) =>
@@ -260,11 +260,11 @@ async function search({ interaction }) {
   );
 
   if (!results.length)
-    return await interaction.reply(`No items found for: **${name}**`);
+    return await interaction.followUp(`No items found for: **${name}**`);
 
   const message = results
     .map((item) => `**${item.name}**: ${item.quantity}`)
     .join("\n");
 
-  await interaction.reply(message);
+  await interaction.followUp(message);
 }

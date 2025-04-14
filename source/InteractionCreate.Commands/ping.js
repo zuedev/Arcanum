@@ -5,6 +5,6 @@ export default {
     .setName("ping")
     .setDescription("Replies with pong!"),
   async execute({ interaction }) {
-    return await interaction.reply("Pong!");
+    return await interaction.followUp("Pong!");
   },
 };

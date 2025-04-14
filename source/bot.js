@@ -59,6 +59,9 @@ export default async () => {
       if (interaction.guild.id !== process.env.DEVELOPMENT_GUILD_ID) return;
 
     try {
+      // defer reply to give the bot time to process
+      await interaction.deferReply();
+
       (
         await import(
           `./InteractionCreate.Commands/${interaction.commandName}.js`
@@ -66,7 +69,7 @@ export default async () => {
       ).default.execute({ interaction });
     } catch (error) {
       console.error(error);
-      interaction.reply("I couldn't execute that command.");
+      interaction.followUp("I couldn't execute that command.");
     }
   });
 

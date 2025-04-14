@@ -79,7 +79,7 @@ async function lookupItem(interaction) {
     }
 
     if (bestMatches.length === 0)
-      return await interaction.reply(
+      return await interaction.followUp(
         `I couldn't find the item: \`${itemName}\``
       );
 
@@ -90,7 +90,7 @@ async function lookupItem(interaction) {
       (v, i, a) => a.findIndex((t) => t.item.name === v.item.name) === i
     );
 
-    return await interaction.reply(
+    return await interaction.followUp(
       `I couldn't find that item, did you mean one of these?\n${bestMatches
         .slice(0, 9)
         .map((m) => `- ${m.item.name} (${(m.similarity * 100).toFixed(2)}%)`)
@@ -170,7 +170,7 @@ async function lookupItem(interaction) {
     embeds.push(embed);
   }
 
-  await interaction.reply({ embeds });
+  await interaction.followUp({ embeds });
 }
 
 async function lookupMonster(interaction) {
@@ -193,7 +193,7 @@ async function lookupMonster(interaction) {
     }
 
     if (bestMatches.length === 0)
-      return await interaction.reply(
+      return await interaction.followUp(
         `I couldn't find the monster: \`${monsterName}\``
       );
 
@@ -204,7 +204,7 @@ async function lookupMonster(interaction) {
       (v, i, a) => a.findIndex((t) => t.monster.name === v.monster.name) === i
     );
 
-    return await interaction.reply(
+    return await interaction.followUp(
       `I couldn't find that monster, did you mean one of these?\n${bestMatches
         .slice(0, 9)
         .map((m) => `- ${m.monster.name} (${(m.similarity * 100).toFixed(2)}%)`)
@@ -262,5 +262,5 @@ async function lookupMonster(interaction) {
     embeds.push(embed);
   }
 
-  await interaction.reply({ embeds });
+  await interaction.followUp({ embeds });
 }

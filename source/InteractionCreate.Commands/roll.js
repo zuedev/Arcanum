@@ -112,7 +112,7 @@ export default {
     )} = ${total}\``}`;
 
     if (reply.length > 2000) {
-      return interaction.reply({
+      return interaction.followUp({
         content:
           "The result is too long to send as a message, here is a file instead.",
         files: [
@@ -124,6 +124,6 @@ export default {
       });
     }
 
-    return interaction.reply(reply);
+    return interaction.followUp(reply);
   },
 };
