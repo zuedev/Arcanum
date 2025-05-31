@@ -12,14 +12,4 @@ Firstly, you need to invite the bot to your server. You can do this by using our
 
 ## Development
 
-<!-- Whatever you want to say about the development of the project -->
-
-### Mirrors
-
-This repository uses mirrors!
-
-The primary host is: https://github.com/zuedev/Arcanum
-
-Official mirrors are:
-
-- https://gitea.sovereign.zue.dev/zuedev/Arcanum
+**This project is mirrored!** Please do not push directly to this repository. Instead, format your changes using [`git format-patch`](https://git-scm.com/docs/git-format-patch) and send them to me via [email](mailto:git@zue.dev) or [Discord](https://discord.com/users/723361818940276736).
