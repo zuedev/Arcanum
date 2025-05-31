@@ -1,6 +1,6 @@
 <img src="avatar.png" height="100">
 
-# Arcanum
+# Discord TTRPG Bot
 
 > An open-source bot to empower TTRPGs on Discord.
 
