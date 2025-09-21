@@ -27,4 +27,12 @@ describe("roll", () => {
     expect(result.results.length).toBe(0);
     expect(result.total).toBe(0);
   });
+
+  test("should handle large quantities correctly", () => {
+    const result = roll("1000d6");
+    expect(result.results.length).toBe(1000);
+    expect(result.total).toBeGreaterThanOrEqual(1000);
+    expect(result.total).toBeLessThanOrEqual(6000);
+    expect(result.results.every(r => r >= 1 && r <= 6)).toBe(true);
+  });
 });

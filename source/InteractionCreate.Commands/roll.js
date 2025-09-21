@@ -105,25 +105,78 @@ export default {
       quantity = interaction.options.getInteger("quantity") ?? 1;
     }
 
-    const { results, total } = roll(`${quantity}d${sides}`);
-
-    const reply = `**Rolling \`${quantity}d${sides}\`...**\n${`\`${results.join(
-      " + "
-    )} = ${total}\``}`;
-
-    if (reply.length > 2000) {
-      return interaction.followUp({
-        content:
-          "The result is too long to send as a message, here is a file instead.",
-        files: [
-          {
-            attachment: Buffer.from(reply),
-            name: "roll.md",
-          },
-        ],
-      });
+    // Apply limits: max 100 dice, max 100 sides
+    if (quantity > 100) {
+      return interaction.editReply("❌ Maximum of 100 dice allowed per roll.");
     }
 
-    return interaction.followUp(reply);
+    if (sides > 100) {
+      return interaction.editReply("❌ Maximum of 100 sides allowed per die.");
+    }
+
+    // For large calculations, process in chunks to avoid timeout
+    const isLargeCalculation = quantity > 100 || (quantity * sides > 100000);
+
+    if (isLargeCalculation) {
+      // Process in chunks to avoid timeout
+      const chunkSize = Math.min(100, Math.max(1, Math.floor(10000 / sides)));
+      let results = [];
+      let total = 0;
+
+      for (let chunk = 0; chunk < quantity; chunk += chunkSize) {
+        const currentChunkSize = Math.min(chunkSize, quantity - chunk);
+        const chunkDice = `${currentChunkSize}d${sides}`;
+        const chunkResult = roll(chunkDice);
+
+        results = results.concat(chunkResult.results);
+        total += chunkResult.total;
+
+        // Yield control periodically to prevent blocking
+        if (chunk % (chunkSize * 10) === 0) {
+          await new Promise(resolve => setImmediate(resolve));
+        }
+      }
+
+      const reply = `**Rolling \`${quantity}d${sides}\`...**\n${`\`${results.join(
+        " + "
+      )} = ${total}\``}`;
+
+      if (reply.length > 2000) {
+        return interaction.editReply({
+          content:
+            "The result is too long to send as a message, here is a file instead.",
+          files: [
+            {
+              attachment: Buffer.from(reply),
+              name: "roll.md",
+            },
+          ],
+        });
+      }
+
+      return interaction.editReply(reply);
+    } else {
+      // For small calculations, use the original fast path
+      const { results, total } = roll(`${quantity}d${sides}`);
+
+      const reply = `**Rolling \`${quantity}d${sides}\`...**\n${`\`${results.join(
+        " + "
+      )} = ${total}\``}`;
+
+      if (reply.length > 2000) {
+        return interaction.editReply({
+          content:
+            "The result is too long to send as a message, here is a file instead.",
+          files: [
+            {
+              attachment: Buffer.from(reply),
+              name: "roll.md",
+            },
+          ],
+        });
+      }
+
+      return interaction.editReply(reply);
+    }
   },
 };
