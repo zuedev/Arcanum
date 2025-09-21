@@ -1,6 +1,6 @@
 # Arcanum
 
-<img src="avatar.png" height="100" alt="Arcanum Bot Avatar">
+<img src="icon.png" height="100" alt="Arcanum Bot Avatar">
 
 > An open-source Discord bot to empower TTRPGs on Discord.
 
@@ -34,17 +34,20 @@ The easiest way to get started is by inviting our hosted bot to your server:
 #### Installation
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/zuedev/arcanum.git
    cd arcanum
    ```
 
 2. Install dependencies:
+
    ```bash
    npm install
    ```
 
 3. Configure environment variables:
+
    ```bash
    cp .env.example .env
    # Edit .env with your configuration
@@ -165,4 +168,4 @@ This project is released into the public domain under the [Unlicense](LICENSE). 
 
 ---
 
-*Enhance your TTRPG sessions with Arcanum - where magic meets technology!* ✨
+_Enhance your TTRPG sessions with Arcanum - where magic meets technology!_ ✨
