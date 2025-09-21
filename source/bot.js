@@ -5,7 +5,6 @@ import {
   Routes,
   GatewayIntentBits,
 } from "discord.js";
-import { readdirSync } from "fs";
 
 export default async () => {
   const client = new Client({
@@ -17,8 +16,6 @@ export default async () => {
       type: ActivityType.Watching,
       name: "my boot logs",
     });
-
-    await dndData();
 
     await registerCommands({ client });
 
@@ -78,20 +75,7 @@ export default async () => {
   async function registerCommands({ client }) {
     const commands = [];
 
-    let commandFiles = readdirSync(
-      "./source/InteractionCreate.Commands"
-    ).filter((file) => file.endsWith(".js"));
-
-    // remove dnd.js if we don't have dnd data
-    if (!process.dnd)
-      commandFiles = commandFiles.filter((file) => file !== "dnd.js");
-
-    // remove alchemy.js if we don't have ENABLE_HOMEBREW_CONTENT set to true
-    if (
-      !process.env.ENABLE_HOMEBREW_CONTENT ||
-      process.env.ENABLE_HOMEBREW_CONTENT !== "true"
-    )
-      commandFiles = commandFiles.filter((file) => file !== "alchemy.js");
+    const commandFiles = ["ping.js", "tracker.js", "roll.js"];
 
     for (const file of commandFiles) {
       const { data } = (await import(`./InteractionCreate.Commands/${file}`))
@@ -132,127 +116,3 @@ export default async () => {
   }
 };
 
-async function dndData() {
-  if (process.env.DND_DATA_DIR) {
-    try {
-      console.log(`D&D data directory set: ${process.env.DND_DATA_DIR}`);
-      console.log(`Attempting to load D&D data into memory...`);
-
-      process.dnd ??= {
-        items: (
-          await import(`../${process.env.DND_DATA_DIR}/items.json`, {
-            with: { type: "json" },
-          })
-        ).default.item,
-      };
-      console.log(`${process.dnd.items.length} items loaded.`);
-
-      const bestiaryIndex = (
-        await import(`../${process.env.DND_DATA_DIR}/bestiary/index.json`, {
-          with: { type: "json" },
-        })
-      ).default;
-
-      process.dnd.bestiary = [];
-
-      for (const bestiary of Object.values(bestiaryIndex)) {
-        process.dnd.bestiary.push(
-          ...(
-            await import(
-              `../${process.env.DND_DATA_DIR}/bestiary/${bestiary}`,
-              {
-                with: { type: "json" },
-              }
-            )
-          ).default.monster
-        );
-      }
-      console.log(`${process.dnd.bestiary.length} bestiary entries loaded.`);
-
-      const bestiaryFluffIndex = (
-        await import(
-          `../${process.env.DND_DATA_DIR}/bestiary/fluff-index.json`,
-          {
-            with: { type: "json" },
-          }
-        )
-      ).default;
-
-      process.dnd.bestiaryFluff = [];
-
-      for (const bestiaryFluff of Object.values(bestiaryFluffIndex)) {
-        process.dnd.bestiaryFluff.push(
-          ...(
-            await import(
-              `../${process.env.DND_DATA_DIR}/bestiary/${bestiaryFluff}`,
-              {
-                with: { type: "json" },
-              }
-            )
-          ).default.monsterFluff
-        );
-      }
-      console.log(
-        `${process.dnd.bestiaryFluff.length} bestiary "fluff" entries loaded.`
-      );
-    } catch (error) {
-      console.error(`Failed to load D&D data: ${error.message}`);
-    }
-  }
-
-  if (!process.dnd && process.env.DND_DATA_BASE_URL) {
-    try {
-      console.log(
-        `D&D data directory not set or failed to load, but we have a data url: ${process.env.DND_DATA_BASE_URL}`
-      );
-      console.log(`Attempting to load D&D data into memory from URL alone...`);
-
-      process.dnd ??= {
-        items: (
-          await fetch(process.env.DND_DATA_BASE_URL + "/data/items.json").then(
-            (res) => res.json()
-          )
-        ).item,
-      };
-      console.log(`${process.dnd.items.length} items loaded.`);
-
-      const bestiaryIndex = await fetch(
-        process.env.DND_DATA_BASE_URL + "/data/bestiary/index.json"
-      ).then((res) => res.json());
-
-      process.dnd.bestiary = [];
-
-      for (const bestiary of Object.values(bestiaryIndex)) {
-        process.dnd.bestiary.push(
-          ...(
-            await fetch(
-              process.env.DND_DATA_BASE_URL + "/data/bestiary/" + bestiary
-            ).then((res) => res.json())
-          ).monster
-        );
-      }
-      console.log(`${process.dnd.bestiary.length} bestiary entries loaded.`);
-
-      const bestiaryFluffIndex = await fetch(
-        process.env.DND_DATA_BASE_URL + "/data/bestiary/fluff-index.json"
-      ).then((res) => res.json());
-
-      process.dnd.bestiaryFluff = [];
-
-      for (const bestiaryFluff of Object.values(bestiaryFluffIndex)) {
-        process.dnd.bestiaryFluff.push(
-          ...(
-            await fetch(
-              process.env.DND_DATA_BASE_URL + "/data/bestiary/" + bestiaryFluff
-            ).then((res) => res.json())
-          ).monsterFluff
-        );
-      }
-      console.log(
-        `${process.dnd.bestiaryFluff.length} bestiary "fluff" entries loaded.`
-      );
-    } catch (error) {
-      console.error(`Failed to load D&D data from URL: ${error.message}`);
-    }
-  }
-}
