@@ -22,6 +22,7 @@ const CONFIG = {
   CHUNK_SIZE_CALCULATION_THRESHOLD: 100000,
   COLLECTION_NAMES: {
     TRACKERS: "trackers",
+    TRACKER_AUDIT_LOG: "tracker_audit_log",
   },
 };
 
@@ -156,6 +157,36 @@ function validateNumber(value, min = 1, max = Number.MAX_SAFE_INTEGER) {
     throw new Error(`Value must be an integer between ${min} and ${max}`);
   }
   return value;
+}
+
+/**
+ * Records an audit log entry for tracker changes
+ * @param {MongoClient} client - MongoDB client
+ * @param {string} channel - Channel ID
+ * @param {string} action - Action performed (add, remove, clear, rename, etc.)
+ * @param {string} userId - User ID who performed the action
+ * @param {string} username - Username who performed the action
+ * @param {Object} details - Additional details about the action
+ */
+async function recordAuditLog(client, channel, action, userId, username, details = {}) {
+  try {
+    const auditCollection = client
+      .db()
+      .collection(CONFIG.COLLECTION_NAMES.TRACKER_AUDIT_LOG);
+
+    const logEntry = {
+      channel,
+      action,
+      userId,
+      username,
+      timestamp: new Date(),
+      details,
+    };
+
+    await auditCollection.insertOne(logEntry);
+  } catch (error) {
+    console.error("Failed to record audit log:", error);
+  }
 }
 
 /**
@@ -369,6 +400,18 @@ function createCommands() {
               .setName("new_name")
               .setDescription("The new name for the item")
               .setRequired(true)
+          )
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("audit")
+          .setDescription("View the audit log of tracker changes")
+          .addIntegerOption((opt) =>
+            opt
+              .setName("limit")
+              .setDescription("Number of recent entries to show (default: 20, max: 100)")
+              .setMinValue(1)
+              .setMaxValue(100)
           )
       )
   );
@@ -872,6 +915,7 @@ async function handleTrackerCommand(interaction) {
     clear: handleTrackerClear,
     search: handleTrackerSearch,
     rename: handleTrackerRename,
+    audit: handleTrackerAudit,
   };
 
   const handler = subcommandHandlers[subcommand];
@@ -1026,6 +1070,21 @@ async function handleTrackerAdd(interaction) {
 
       const oldQuantity = updateResult.quantity - quantity;
 
+      // Record audit log
+      await recordAuditLog(
+        client,
+        interaction.channel.id,
+        updateResult.quantity <= 0 ? "remove_all" : "add",
+        interaction.user.id,
+        interaction.user.username,
+        {
+          itemName: name,
+          quantityChanged: quantity,
+          oldQuantity,
+          newQuantity: updateResult.quantity,
+        }
+      );
+
       if (updateResult.quantity <= 0) {
         await collection.deleteOne({ channel: interaction.channel.id, name });
         await interaction.editReply(
@@ -1093,6 +1152,21 @@ async function handleTrackerRemove(interaction) {
       );
 
       const oldQuantity = updateResult.quantity + quantity;
+
+      // Record audit log
+      await recordAuditLog(
+        client,
+        interaction.channel.id,
+        updateResult.quantity <= 0 ? "remove_all" : "remove",
+        interaction.user.id,
+        interaction.user.username,
+        {
+          itemName: name,
+          quantityChanged: quantity,
+          oldQuantity,
+          newQuantity: updateResult.quantity,
+        }
+      );
 
       if (updateResult.quantity <= 0) {
         await collection.deleteOne({ channel: interaction.channel.id, name });
@@ -1196,6 +1270,11 @@ async function handleTrackerClear(interaction) {
         .db()
         .collection(CONFIG.COLLECTION_NAMES.TRACKERS);
 
+      // Get items before deletion for audit log
+      const itemsBeforeDeletion = await collection
+        .find({ channel: interaction.channel.id })
+        .toArray();
+
       const result = await collection.deleteMany({
         channel: interaction.channel.id,
       });
@@ -1203,6 +1282,22 @@ async function handleTrackerClear(interaction) {
       if (result.deletedCount === 0) {
         await interaction.editReply("The tracker is already empty.");
       } else {
+        // Record audit log
+        await recordAuditLog(
+          client,
+          interaction.channel.id,
+          "clear",
+          interaction.user.id,
+          interaction.user.username,
+          {
+            itemsCleared: itemsBeforeDeletion.map(item => ({
+              name: item.name,
+              quantity: item.quantity
+            })),
+            totalItemsCleared: result.deletedCount,
+          }
+        );
+
         const itemText = result.deletedCount === 1 ? "item" : "items";
         await interaction.editReply(
           `Cleared ${result.deletedCount} ${itemText} from the tracker.`
@@ -1283,6 +1378,22 @@ async function handleTrackerRename(interaction) {
           name: oldName,
         });
 
+        // Record audit log for merge
+        await recordAuditLog(
+          client,
+          interaction.channel.id,
+          "rename_merge",
+          interaction.user.id,
+          interaction.user.username,
+          {
+            oldName,
+            newName,
+            oldQuantity: existingItem.quantity,
+            mergedWithQuantity: conflictingItem.quantity,
+            totalQuantity,
+          }
+        );
+
         await interaction.editReply(
           `Renamed **${oldName}** to **${newName}** and merged with existing item. New quantity: \`${totalQuantity}\`.`
         );
@@ -1295,6 +1406,20 @@ async function handleTrackerRename(interaction) {
               name: newName,
               updatedAt: new Date(),
             },
+          }
+        );
+
+        // Record audit log for simple rename
+        await recordAuditLog(
+          client,
+          interaction.channel.id,
+          "rename",
+          interaction.user.id,
+          interaction.user.username,
+          {
+            oldName,
+            newName,
+            quantity: existingItem.quantity,
           }
         );
 
@@ -1392,6 +1517,91 @@ async function handleTrackerSearch(interaction) {
     } else {
       await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
     }
+  }
+}
+
+/**
+ * Handles tracker audit subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleTrackerAudit(interaction) {
+  try {
+    const limit = interaction.options.getInteger("limit") || 20;
+
+    await withDatabase(async (client) => {
+      const auditCollection = client
+        .db()
+        .collection(CONFIG.COLLECTION_NAMES.TRACKER_AUDIT_LOG);
+
+      const auditEntries = await auditCollection
+        .find({ channel: interaction.channel.id })
+        .sort({ timestamp: -1 })
+        .limit(limit)
+        .toArray();
+
+      if (!auditEntries.length) {
+        await interaction.editReply("No audit log entries found for this channel.");
+        return;
+      }
+
+      let message = `**Tracker Audit Log** (${auditEntries.length} recent entries):\n\n`;
+
+      for (const entry of auditEntries.reverse()) {
+        const timestamp = entry.timestamp.toLocaleString();
+        const actionText = formatAuditAction(entry.action, entry.details);
+        message += `**${timestamp}** - <@${entry.userId}> ${actionText}\n`;
+      }
+
+      if (message.length > CONFIG.TRACKER_MESSAGE_LIMIT) {
+        // Create detailed JSON file for large audit logs
+        const auditData = auditEntries.map(entry => ({
+          timestamp: entry.timestamp.toISOString(),
+          user: entry.username,
+          action: entry.action,
+          details: entry.details
+        }));
+
+        await interaction.editReply({
+          content: `**Tracker Audit Log** (${auditEntries.length} recent entries)\n\nThe audit log is too large to display, here is a JSON file instead.`,
+          files: [
+            {
+              attachment: Buffer.from(JSON.stringify(auditData, null, 2), "utf8"),
+              name: `tracker-audit-${interaction.channel.id}.json`,
+            },
+          ],
+        });
+      } else {
+        await interaction.editReply(message);
+      }
+    });
+  } catch (error) {
+    console.error("Error in tracker audit:", error);
+    await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+  }
+}
+
+/**
+ * Formats an audit action into human-readable text
+ * @param {string} action - The action type
+ * @param {Object} details - Action details
+ * @returns {string} Formatted action text
+ */
+function formatAuditAction(action, details) {
+  switch (action) {
+    case "add":
+      return `added ${details.quantityChanged} **${details.itemName}** (${details.oldQuantity} → ${details.newQuantity})`;
+    case "remove":
+      return `removed ${details.quantityChanged} **${details.itemName}** (${details.oldQuantity} → ${details.newQuantity})`;
+    case "remove_all":
+      return `removed all **${details.itemName}** (${details.oldQuantity} → 0)`;
+    case "clear":
+      return `cleared ${details.totalItemsCleared} item${details.totalItemsCleared === 1 ? '' : 's'} from tracker`;
+    case "rename":
+      return `renamed **${details.oldName}** to **${details.newName}**`;
+    case "rename_merge":
+      return `renamed **${details.oldName}** to **${details.newName}** and merged quantities (${details.oldQuantity} + ${details.mergedWithQuantity} = ${details.totalQuantity})`;
+    default:
+      return `performed action: ${action}`;
   }
 }
 
