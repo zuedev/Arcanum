@@ -9,736 +9,902 @@ import {
 } from "discord.js";
 import { MongoClient } from "mongodb";
 
+// ===== CONSTANTS =====
+
+const CONFIG = {
+  MAX_DICE_QUANTITY: 100,
+  MAX_DICE_SIDES: 100,
+  MAX_ITEM_NAME_LENGTH: 100,
+  MIN_SEARCH_TERM_LENGTH: 2,
+  SIMILARITY_THRESHOLD: 0.5,
+  DISCORD_MESSAGE_LIMIT: 2000,
+  TRACKER_MESSAGE_LIMIT: 1900,
+  CHUNK_SIZE_CALCULATION_THRESHOLD: 100000,
+  COLLECTION_NAMES: {
+    TRACKERS: "trackers",
+  },
+};
+
+const DICE_TYPES = [4, 6, 8, 10, 12, 20, 100];
+
+const ERROR_MESSAGES = {
+  INVALID_QUANTITY: "The quantity must be an integer greater than 0.",
+  ITEM_NAME_TOO_LONG: `Item name must be ${CONFIG.MAX_ITEM_NAME_LENGTH} characters or less.`,
+  ITEM_NOT_FOUND: "Item not found in the tracker.",
+  TRACKER_EMPTY: "The tracker is empty.",
+  SEARCH_TERM_TOO_SHORT: `Search term must be at least ${CONFIG.MIN_SEARCH_TERM_LENGTH} characters long.`,
+  NO_PERMISSION: "You must have the `MANAGE_CHANNELS` permission to clear the tracker.",
+  MAX_DICE_EXCEEDED: `❌ Maximum of ${CONFIG.MAX_DICE_QUANTITY} dice allowed per roll.`,
+  MAX_SIDES_EXCEEDED: `❌ Maximum of ${CONFIG.MAX_DICE_SIDES} sides allowed per die.`,
+  GENERIC_ERROR: "An unexpected error occurred. Please try again.",
+  DATABASE_ERROR: "An error occurred while accessing the database.",
+};
+
 // ===== ENVIRONMENT VALIDATION =====
 
-// check required environment variables are set
-["DISCORD_BOT_TOKEN", "MONGODB_URI"].forEach((env) => {
-  if (!process.env[env])
-    throw new Error(`Environment variable ${env} is required!`);
-});
+/**
+ * Validates required environment variables
+ * @throws {Error} If required environment variables are missing or invalid
+ */
+function validateEnvironment() {
+  const requiredEnvVars = ["DISCORD_BOT_TOKEN", "MONGODB_URI"];
 
-// does our mongodb uri contain a db name?
-if (!process.env.MONGODB_URI.match(/\/([a-zA-Z0-9-_]+)(\?|$)/))
-  throw new Error(
-    "MONGODB_URI must contain a database name! Example: mongodb+srv://user:password@cluster.mongodb.net/mydatabase"
-  );
+  for (const envVar of requiredEnvVars) {
+    if (!process.env[envVar]) {
+      throw new Error(`Environment variable ${envVar} is required!`);
+    }
+  }
+
+  // Validate MongoDB URI contains database name
+  if (!process.env.MONGODB_URI.match(/\/([a-zA-Z0-9-_]+)(\?|$)/)) {
+    throw new Error(
+      "MONGODB_URI must contain a database name! Example: mongodb+srv://user:password@cluster.mongodb.net/mydatabase"
+    );
+  }
+}
 
 // ===== UTILITY FUNCTIONS =====
 
 /**
- * Connect to MongoDB
- *
- * @returns {Promise<MongoClient>} A promise that resolves to a connected MongoClient
- *
- * @example
- * const mongo = await connect();
- *
- * // do something...
- *
- * await mongo.close(); // always close!
+ * Connects to MongoDB with optimized settings
+ * @returns {Promise<MongoClient>} Connected MongoDB client
+ * @throws {Error} If connection fails
  */
-async function connect() {
-  const mongo = new MongoClient(process.env.MONGODB_URI, {
-    retryWrites: true,
-    writeConcern: "majority",
-  });
+async function connectToDatabase() {
+  try {
+    const client = new MongoClient(process.env.MONGODB_URI, {
+      retryWrites: true,
+      writeConcern: "majority",
+      maxPoolSize: 10,
+      minPoolSize: 2,
+      maxIdleTimeMS: 30000,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+    });
 
-  await mongo.connect();
-
-  return mongo;
+    await client.connect();
+    return client;
+  } catch (error) {
+    console.error("Failed to connect to MongoDB:", error);
+    throw new Error("Database connection failed");
+  }
 }
 
 /**
- * Calculates the similarity between two strings based on the Levenshtein distance.
- * Returns a score between 0 (completely different) and 1 (identical).
- *
- * @param {string} str1 The first string.
- * @param {string} str2 The second string.
- * @returns {number} A similarity score between 0 and 1.
+ * Safely executes database operations with proper connection management
+ * @param {Function} operation - Async function that performs database operations
+ * @returns {Promise<any>} Result of the database operation
+ */
+async function withDatabase(operation) {
+  let client = null;
+  try {
+    client = await connectToDatabase();
+    return await operation(client);
+  } catch (error) {
+    console.error("Database operation failed:", error);
+    throw error;
+  } finally {
+    if (client) {
+      try {
+        await client.close();
+      } catch (closeError) {
+        console.error("Error closing database connection:", closeError);
+      }
+    }
+  }
+}
+
+/**
+ * Validates and sanitizes input strings
+ * @param {string} input - Input string to validate
+ * @param {number} maxLength - Maximum allowed length
+ * @returns {string} Sanitized input
+ * @throws {Error} If input is invalid
+ */
+function validateAndSanitizeString(input, maxLength = CONFIG.MAX_ITEM_NAME_LENGTH) {
+  if (typeof input !== "string") {
+    throw new Error("Input must be a string");
+  }
+
+  const sanitized = input.trim();
+
+  if (sanitized.length === 0) {
+    throw new Error("Input cannot be empty");
+  }
+
+  if (sanitized.length > maxLength) {
+    throw new Error(`Input must be ${maxLength} characters or less`);
+  }
+
+  return sanitized;
+}
+
+/**
+ * Validates numeric input
+ * @param {number} value - Number to validate
+ * @param {number} min - Minimum allowed value
+ * @param {number} max - Maximum allowed value
+ * @returns {number} Validated number
+ * @throws {Error} If value is invalid
+ */
+function validateNumber(value, min = 1, max = Number.MAX_SAFE_INTEGER) {
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`Value must be an integer between ${min} and ${max}`);
+  }
+  return value;
+}
+
+/**
+ * Calculates the similarity between two strings using Levenshtein distance
+ * @param {string} str1 - First string to compare
+ * @param {string} str2 - Second string to compare
+ * @returns {number} Similarity score between 0 and 1
  */
 function calculateSimilarity(str1, str2) {
-  // Ensure inputs are strings
-  str1 = String(str1);
-  str2 = String(str2);
+  const s1 = String(str1).toLowerCase();
+  const s2 = String(str2).toLowerCase();
 
-  const len1 = str1.length;
-  const len2 = str2.length;
+  const len1 = s1.length;
+  const len2 = s2.length;
 
-  // Handle empty strings
-  if (len1 === 0 && len2 === 0) return 1; // Both empty, considered identical
+  // Handle edge cases
+  if (len1 === 0 && len2 === 0) return 1;
+  if (len1 === 0 || len2 === 0) return 0;
 
-  if (len1 === 0 || len2 === 0) return 0; // One is empty, the other isn't, completely different
-
-  // Create a matrix to store distances
-  // matrix[i][j] will store the Levenshtein distance between the first i characters of str1
-  // and the first j characters of str2
-  const matrix = Array(len1 + 1)
-    .fill(null)
-    .map(() => Array(len2 + 1).fill(null));
-
-  // Initialize the first row and column
-  // Distance from empty string to prefix of length i/j is i/j insertions/deletions
-  for (let i = 0; i <= len1; i++) {
-    matrix[i][0] = i;
-  }
-  for (let j = 0; j <= len2; j++) {
-    matrix[0][j] = j;
+  // Use space-optimized algorithm for large strings
+  if (len1 > 100 || len2 > 100) {
+    return calculateSimilarityOptimized(s1, s2);
   }
 
-  // Fill the rest of the matrix
+  // Standard matrix approach for smaller strings
+  const matrix = Array.from({ length: len1 + 1 }, (_, i) =>
+    Array.from({ length: len2 + 1 }, (_, j) => (i === 0 ? j : i))
+  );
+
   for (let i = 1; i <= len1; i++) {
     for (let j = 1; j <= len2; j++) {
-      // Check if the characters are the same
-      const cost = str1[i - 1] === str2[j - 1] ? 0 : 1; // 0 if match, 1 if substitution needed
-
+      const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
       matrix[i][j] = Math.min(
-        matrix[i - 1][j] + 1, // Deletion from str1
-        matrix[i][j - 1] + 1, // Insertion into str1
-        matrix[i - 1][j - 1] + cost // Substitution or match
+        matrix[i - 1][j] + 1,     // Deletion
+        matrix[i][j - 1] + 1,     // Insertion
+        matrix[i - 1][j - 1] + cost // Substitution
       );
     }
   }
 
-  // The Levenshtein distance is in the bottom-right corner
   const distance = matrix[len1][len2];
-
-  // Calculate similarity score
-  // Max possible distance is the length of the longer string
   const maxLength = Math.max(len1, len2);
-  const similarity = 1 - distance / maxLength;
-
-  return similarity;
+  return 1 - distance / maxLength;
 }
 
 /**
- * Rolls a specified number of dice with a given number of sides and returns the results and total.
- *
- * @param {string} dice - The dice notation string (e.g., "2d6" for rolling two six-sided dice).
- * @returns {{ results: number[], total: number }} An object containing an array of individual roll results and their total sum.
- * @example
- * roll("3d4"); // { results: [2, 4, 1], total: 7 }
+ * Space-optimized similarity calculation for large strings
+ * @param {string} s1 - First string
+ * @param {string} s2 - Second string
+ * @returns {number} Similarity score
  */
-export function roll(dice) {
-  const [quantity, sides] = dice.split("d").map((x) => parseInt(x));
+function calculateSimilarityOptimized(s1, s2) {
+  const len1 = s1.length;
+  const len2 = s2.length;
 
-  let results = [];
-  let total = 0;
+  let prevRow = Array.from({ length: len2 + 1 }, (_, j) => j);
+  let currRow = new Array(len2 + 1);
 
-  for (let i = 0; i < quantity; i++) {
-    const roll = Math.floor(Math.random() * sides) + 1;
-    results.push(roll);
-    total += roll;
+  for (let i = 1; i <= len1; i++) {
+    currRow[0] = i;
+    for (let j = 1; j <= len2; j++) {
+      const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+      currRow[j] = Math.min(
+        currRow[j - 1] + 1,
+        prevRow[j] + 1,
+        prevRow[j - 1] + cost
+      );
+    }
+    [prevRow, currRow] = [currRow, prevRow];
   }
 
-  return {
-    results,
-    total,
-  };
+  const distance = prevRow[len2];
+  const maxLength = Math.max(len1, len2);
+  return 1 - distance / maxLength;
+}
+
+/**
+ * Rolls dice with specified quantity and sides
+ * @param {string} diceNotation - Dice notation (e.g., "2d6")
+ * @returns {{results: number[], total: number}} Roll results and total
+ * @throws {Error} If dice notation is invalid
+ */
+export function roll(diceNotation) {
+  try {
+    const parts = diceNotation.split("d");
+    if (parts.length !== 2) {
+      throw new Error("Invalid dice notation");
+    }
+
+    const quantity = validateNumber(parseInt(parts[0]), 1, CONFIG.MAX_DICE_QUANTITY);
+    const sides = validateNumber(parseInt(parts[1]), 1, CONFIG.MAX_DICE_SIDES);
+
+    const results = [];
+    let total = 0;
+
+    for (let i = 0; i < quantity; i++) {
+      const rollResult = Math.floor(Math.random() * sides) + 1;
+      results.push(rollResult);
+      total += rollResult;
+    }
+
+    return { results, total };
+  } catch (error) {
+    console.error("Error in roll function:", error);
+    throw new Error("Invalid dice roll parameters");
+  }
+}
+
+/**
+ * Formats roll results for Discord message
+ * @param {number} quantity - Number of dice rolled
+ * @param {number} sides - Number of sides per die
+ * @param {number[]} results - Individual roll results
+ * @param {number} total - Total sum
+ * @returns {string} Formatted message
+ */
+function formatRollResult(quantity, sides, results, total) {
+  const header = `**Rolling \`${quantity}d${sides}\`...**\n`;
+  const resultString = `\`${results.join(" + ")} = ${total}\``;
+  return header + resultString;
+}
+
+/**
+ * Creates command builders with reduced repetition
+ * @returns {SlashCommandBuilder[]} Array of command builders
+ */
+function createCommands() {
+  const commands = [];
+
+  // Ping command
+  commands.push(
+    new SlashCommandBuilder()
+      .setName("ping")
+      .setDescription("Replies with pong!")
+  );
+
+  // Tracker command
+  commands.push(
+    new SlashCommandBuilder()
+      .setName("tracker")
+      .setDescription("Manage trackers for the current channel")
+      .addSubcommand(sub => sub
+        .setName("add")
+        .setDescription("Add something to the tracker")
+        .addStringOption(opt => opt
+          .setName("name")
+          .setDescription("The name of the thing to add")
+          .setRequired(true))
+        .addIntegerOption(opt => opt
+          .setName("quantity")
+          .setDescription("The quantity to add")
+          .setRequired(true)))
+      .addSubcommand(sub => sub
+        .setName("remove")
+        .setDescription("Remove something from the tracker")
+        .addStringOption(opt => opt
+          .setName("name")
+          .setDescription("The name of the thing to remove")
+          .setRequired(true))
+        .addIntegerOption(opt => opt
+          .setName("quantity")
+          .setDescription("The quantity to remove")
+          .setRequired(true)))
+      .addSubcommand(sub => sub
+        .setName("list")
+        .setDescription("List all the things in the tracker"))
+      .addSubcommand(sub => sub
+        .setName("clear")
+        .setDescription("Clear all the things from the tracker"))
+      .addSubcommand(sub => sub
+        .setName("search")
+        .setDescription("Search for an item in the tracker")
+        .addStringOption(opt => opt
+          .setName("name")
+          .setDescription("The name of the thing to search for")
+          .setRequired(true)))
+  );
+
+  // Roll command with all dice types
+  const rollCommand = new SlashCommandBuilder()
+    .setName("roll")
+    .setDescription("Roll some dice");
+
+  // Add standard dice subcommands
+  DICE_TYPES.forEach(sides => {
+    rollCommand.addSubcommand(sub => sub
+      .setName(`d${sides}`)
+      .setDescription(`Roll a d${sides}`)
+      .addIntegerOption(opt => opt
+        .setName("quantity")
+        .setDescription("The quantity of dice to roll")));
+  });
+
+  // Add custom dice subcommand
+  rollCommand.addSubcommand(sub => sub
+    .setName("dx")
+    .setDescription("Roll a custom die")
+    .addIntegerOption(opt => opt
+      .setName("sides")
+      .setDescription("The number of sides on the die")
+      .setRequired(true))
+    .addIntegerOption(opt => opt
+      .setName("quantity")
+      .setDescription("The quantity of dice to roll")));
+
+  commands.push(rollCommand);
+  return commands;
 }
 
 // ===== BOT FUNCTIONALITY =====
 
+/**
+ * Initializes and starts the Discord bot
+ * @throws {Error} If bot initialization fails
+ */
 async function startBot() {
   const client = new Client({
     intents: [GatewayIntentBits.Guilds],
+    failIfNotExists: false,
   });
 
-  client.on(Events.ClientReady, async () => {
-    client.user.setActivity({
-      type: ActivityType.Watching,
-      name: "my boot logs",
-    });
+  // Enhanced error handling for client events
+  client.on("error", (error) => {
+    console.error("Discord client error:", error);
+  });
 
-    await registerCommands({ client });
+  client.on("warn", (warning) => {
+    console.warn("Discord client warning:", warning);
+  });
 
-    console.log(`Bot has started! Logged in as ${client.user.tag}`);
-
-    console.table({
-      "Bot Tag": client.user.tag,
-      "Bot ID": client.user.id,
-      "Guilds Cache Size": client.guilds.cache.size,
-      "Users Cache Size": client.users.cache.size,
-      "Guilds Cache Member Cache Total": client.guilds.cache.reduce(
-        (acc, guild) => acc + guild.memberCount,
-        0
-      ),
-    });
-
-    console.table(
-      client.guilds.cache.map((guild) => {
-        return {
-          "Guild Name": guild.name,
-          "Guild ID": guild.id,
-          "Guild Member Count": guild.memberCount,
-        };
-      })
-    );
-
-    client.user.setActivity({
-      type: ActivityType.Playing,
-      name: "with my dice...",
-    });
+  client.on(Events.ClientReady, async (readyClient) => {
+    try {
+      await handleClientReady(readyClient);
+    } catch (error) {
+      console.error("Error in client ready handler:", error);
+      process.exit(1);
+    }
   });
 
   client.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.isCommand()) return;
+    if (!interaction.isChatInputCommand()) return;
 
     try {
       await interaction.deferReply();
       await executeCommand(interaction);
     } catch (error) {
-      console.error(error);
-      await interaction.followUp("I couldn't execute that command.");
+      console.error(`Error executing command ${interaction.commandName}:`, error);
+
+      const errorMessage = error.message === "Database connection failed"
+        ? ERROR_MESSAGES.DATABASE_ERROR
+        : ERROR_MESSAGES.GENERIC_ERROR;
+
+      try {
+        if (interaction.deferred) {
+          await interaction.editReply(errorMessage);
+        } else {
+          await interaction.reply({ content: errorMessage, ephemeral: true });
+        }
+      } catch (replyError) {
+        console.error("Failed to send error response:", replyError);
+      }
     }
   });
 
-  await client.login(process.env.DISCORD_BOT_TOKEN);
+  try {
+    await client.login(process.env.DISCORD_BOT_TOKEN);
+  } catch (error) {
+    console.error("Failed to login to Discord:", error);
+    process.exit(1);
+  }
+}
 
-  // ===== COMMAND DEFINITIONS =====
+/**
+ * Handles client ready event
+ * @param {Client} client - Discord client instance
+ */
+async function handleClientReady(client) {
+  console.log(`Bot has started! Logged in as ${client.user.tag}`);
 
-  const commands = [
-    // Ping command
-    new SlashCommandBuilder()
-      .setName("ping")
-      .setDescription("Replies with pong!"),
+  // Set initial activity
+  await client.user.setActivity({
+    type: ActivityType.Watching,
+    name: "my boot logs",
+  });
 
-    // Tracker command with all subcommands
-    new SlashCommandBuilder()
-      .setName("tracker")
-      .setDescription("Manage trackers for the current channel")
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("add")
-          .setDescription("Add something to the tracker")
-          .addStringOption((option) =>
-            option
-              .setName("name")
-              .setDescription("The name of the thing to add")
-              .setRequired(true)
-          )
-          .addIntegerOption((option) =>
-            option
-              .setName("quantity")
-              .setDescription("The quantity to add")
-              .setRequired(true)
-          )
-      )
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("remove")
-          .setDescription("Remove something from the tracker")
-          .addStringOption((option) =>
-            option
-              .setName("name")
-              .setDescription("The name of the thing to remove")
-              .setRequired(true)
-          )
-          .addIntegerOption((option) =>
-            option
-              .setName("quantity")
-              .setDescription("The quantity to remove")
-              .setRequired(true)
-          )
-      )
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("list")
-          .setDescription("List all the things in the tracker")
-      )
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("clear")
-          .setDescription("Clear all the things from the tracker")
-      )
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("search")
-          .setDescription("Search for an item in the tracker")
-          .addStringOption((option) =>
-            option
-              .setName("name")
-              .setDescription("The name of the thing to search for")
-              .setRequired(true)
-          )
-      ),
+  // Register commands
+  await registerCommands(client);
 
-    // Roll command with all dice subcommands
-    new SlashCommandBuilder()
-      .setName("roll")
-      .setDescription("Roll some dice")
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("d20")
-          .setDescription("Roll a d20")
-          .addIntegerOption((option) =>
-            option
-              .setName("quantity")
-              .setDescription("The quantity of dice to roll")
-          )
-      )
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("d12")
-          .setDescription("Roll a d12")
-          .addIntegerOption((option) =>
-            option
-              .setName("quantity")
-              .setDescription("The quantity of dice to roll")
-          )
-      )
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("d10")
-          .setDescription("Roll a d10")
-          .addIntegerOption((option) =>
-            option
-              .setName("quantity")
-              .setDescription("The quantity of dice to roll")
-          )
-      )
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("d100")
-          .setDescription("Roll a pair of d10s for a d100")
-          .addIntegerOption((option) =>
-            option
-              .setName("quantity")
-              .setDescription("The quantity of dice to roll")
-          )
-      )
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("d8")
-          .setDescription("Roll a d8")
-          .addIntegerOption((option) =>
-            option
-              .setName("quantity")
-              .setDescription("The quantity of dice to roll")
-          )
-      )
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("d6")
-          .setDescription("Roll a d6")
-          .addIntegerOption((option) =>
-            option
-              .setName("quantity")
-              .setDescription("The quantity of dice to roll")
-          )
-      )
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("d4")
-          .setDescription("Roll a d4")
-          .addIntegerOption((option) =>
-            option
-              .setName("quantity")
-              .setDescription("The quantity of dice to roll")
-          )
-      )
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("dx")
-          .setDescription("Roll a custom die")
-          .addIntegerOption((option) =>
-            option
-              .setName("sides")
-              .setDescription("The number of sides on the die")
-              .setRequired(true)
-          )
-          .addIntegerOption((option) =>
-            option
-              .setName("quantity")
-              .setDescription("The quantity of dice to roll")
-          )
-      ),
-  ];
+  // Log bot statistics
+  logBotStatistics(client);
 
-  // ===== COMMAND EXECUTION =====
+  // Set final activity
+  await client.user.setActivity({
+    type: ActivityType.Playing,
+    name: "with my dice...",
+  });
+}
 
-  async function executeCommand(interaction) {
-    switch (interaction.commandName) {
-      case "ping":
-        await pingCommand(interaction);
-        break;
-      case "tracker":
-        await trackerCommand(interaction);
-        break;
-      case "roll":
-        await rollCommand(interaction);
-        break;
-      default:
-        await interaction.followUp("This command is not supported.");
-        break;
-    }
+/**
+ * Logs bot statistics to console
+ * @param {Client} client - Discord client instance
+ */
+function logBotStatistics(client) {
+  const stats = {
+    "Bot Tag": client.user.tag,
+    "Bot ID": client.user.id,
+    "Guilds Count": client.guilds.cache.size,
+    "Users Count": client.users.cache.size,
+    "Total Members": client.guilds.cache.reduce(
+      (acc, guild) => acc + guild.memberCount,
+      0
+    ),
+  };
+
+  console.table(stats);
+
+  if (client.guilds.cache.size > 0) {
+    const guildInfo = client.guilds.cache.map(guild => ({
+      "Guild Name": guild.name,
+      "Guild ID": guild.id,
+      "Member Count": guild.memberCount,
+    }));
+
+    console.table(guildInfo);
+  }
+}
+
+/**
+ * Registers slash commands with Discord
+ * @param {Client} client - Discord client instance
+ */
+async function registerCommands(client) {
+  try {
+    const commands = createCommands();
+
+    await client.rest.put(
+      Routes.applicationCommands(client.application.id),
+      { body: commands }
+    );
+
+    console.log(`Successfully registered ${commands.length} slash commands:`,
+      commands.map(c => c.name).join(", "));
+  } catch (error) {
+    console.error("Failed to register slash commands:", error);
+    throw error;
+  }
+}
+
+// ===== COMMAND EXECUTION =====
+
+/**
+ * Executes the appropriate command handler
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function executeCommand(interaction) {
+  const commandHandlers = {
+    ping: handlePingCommand,
+    tracker: handleTrackerCommand,
+    roll: handleRollCommand,
+  };
+
+  const handler = commandHandlers[interaction.commandName];
+  if (!handler) {
+    await interaction.editReply("This command is not supported.");
+    return;
   }
 
-  // ===== COMMAND HANDLERS =====
+  await handler(interaction);
+}
 
-  async function pingCommand(interaction) {
-    return await interaction.followUp("Pong!");
+// ===== COMMAND HANDLERS =====
+
+/**
+ * Handles ping command
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handlePingCommand(interaction) {
+  const startTime = Date.now();
+  await interaction.editReply("Pong!");
+
+  const latency = Date.now() - startTime;
+  const apiLatency = Math.round(interaction.client.ws.ping);
+
+  await interaction.editReply(
+    `🏓 Pong!\n**Response Time:** ${latency}ms\n**API Latency:** ${apiLatency}ms`
+  );
+}
+
+/**
+ * Handles tracker command and its subcommands
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleTrackerCommand(interaction) {
+  const subcommand = interaction.options.getSubcommand();
+
+  const subcommandHandlers = {
+    add: handleTrackerAdd,
+    remove: handleTrackerRemove,
+    list: handleTrackerList,
+    clear: handleTrackerClear,
+    search: handleTrackerSearch,
+  };
+
+  const handler = subcommandHandlers[subcommand];
+  if (!handler) {
+    await interaction.editReply("This subcommand is not supported.");
+    return;
   }
 
-  async function trackerCommand(interaction) {
-    const subcommand = interaction.options.getSubcommand();
+  await handler(interaction);
+}
 
-    switch (subcommand) {
-      case "add":
-        await trackerAdd(interaction);
-        break;
-      case "remove":
-        await trackerRemove(interaction);
-        break;
-      case "list":
-        await trackerList(interaction);
-        break;
-      case "clear":
-        await trackerClear(interaction);
-        break;
-      case "search":
-        await trackerSearch(interaction);
-        break;
-      default:
-        await interaction.followUp("This subcommand is not supported.");
-        break;
-    }
+/**
+ * Handles roll command
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleRollCommand(interaction) {
+  const subcommand = interaction.options.getSubcommand();
+  let quantity = interaction.options.getInteger("quantity") ?? 1;
+  let sides;
+
+  // Parse dice parameters
+  if (subcommand === "dx") {
+    sides = interaction.options.getInteger("sides");
+  } else {
+    sides = parseInt(subcommand.substring(1));
   }
 
-  async function rollCommand(interaction) {
-    let quantity = 1;
-    let sides = 20;
-
-    const subcommand = interaction.options.getSubcommand();
-
-    if (subcommand === "dx") {
-      sides = interaction.options.getInteger("sides");
-      quantity = interaction.options.getInteger("quantity") ?? 1;
+  // Validate parameters
+  try {
+    quantity = validateNumber(quantity, 1, CONFIG.MAX_DICE_QUANTITY);
+    sides = validateNumber(sides, 1, CONFIG.MAX_DICE_SIDES);
+  } catch (error) {
+    if (quantity > CONFIG.MAX_DICE_QUANTITY) {
+      await interaction.editReply(ERROR_MESSAGES.MAX_DICE_EXCEEDED);
+    } else if (sides > CONFIG.MAX_DICE_SIDES) {
+      await interaction.editReply(ERROR_MESSAGES.MAX_SIDES_EXCEEDED);
     } else {
-      sides = parseInt(subcommand.substring(1));
-      quantity = interaction.options.getInteger("quantity") ?? 1;
+      await interaction.editReply(ERROR_MESSAGES.GENERIC_ERROR);
     }
+    return;
+  }
 
-    // Apply limits: max 100 dice, max 100 sides
-    if (quantity > 100) {
-      return interaction.editReply("❌ Maximum of 100 dice allowed per roll.");
-    }
+  // Perform the roll
+  try {
+    const rollResult = await performDiceRoll(quantity, sides);
+    const message = formatRollResult(quantity, sides, rollResult.results, rollResult.total);
 
-    if (sides > 100) {
-      return interaction.editReply("❌ Maximum of 100 sides allowed per die.");
-    }
-
-    // For large calculations, process in chunks to avoid timeout
-    const isLargeCalculation = quantity > 100 || (quantity * sides > 100000);
-
-    if (isLargeCalculation) {
-      // Process in chunks to avoid timeout
-      const chunkSize = Math.min(100, Math.max(1, Math.floor(10000 / sides)));
-      let results = [];
-      let total = 0;
-
-      for (let chunk = 0; chunk < quantity; chunk += chunkSize) {
-        const currentChunkSize = Math.min(chunkSize, quantity - chunk);
-        const chunkDice = `${currentChunkSize}d${sides}`;
-        const chunkResult = roll(chunkDice);
-
-        results = results.concat(chunkResult.results);
-        total += chunkResult.total;
-
-        // Yield control periodically to prevent blocking
-        if (chunk % (chunkSize * 10) === 0) {
-          await new Promise(resolve => setImmediate(resolve));
-        }
-      }
-
-      const reply = `**Rolling \`${quantity}d${sides}\`...**\n${`\`${results.join(
-        " + "
-      )} = ${total}\``}`;
-
-      if (reply.length > 2000) {
-        return interaction.editReply({
-          content:
-            "The result is too long to send as a message, here is a file instead.",
-          files: [
-            {
-              attachment: Buffer.from(reply),
-              name: "roll.md",
-            },
-          ],
-        });
-      }
-
-      return interaction.editReply(reply);
+    if (message.length > CONFIG.DISCORD_MESSAGE_LIMIT) {
+      await interaction.editReply({
+        content: "The result is too long to send as a message, here is a file instead.",
+        files: [{
+          attachment: Buffer.from(message, "utf8"),
+          name: "roll.md",
+        }],
+      });
     } else {
-      // For small calculations, use the original fast path
-      const { results, total } = roll(`${quantity}d${sides}`);
+      await interaction.editReply(message);
+    }
+  } catch (error) {
+    console.error("Error performing dice roll:", error);
+    await interaction.editReply(ERROR_MESSAGES.GENERIC_ERROR);
+  }
+}
 
-      const reply = `**Rolling \`${quantity}d${sides}\`...**\n${`\`${results.join(
-        " + "
-      )} = ${total}\``}`;
+/**
+ * Performs dice roll with optimization for large rolls
+ * @param {number} quantity - Number of dice to roll
+ * @param {number} sides - Number of sides per die
+ * @returns {Promise<{results: number[], total: number}>} Roll results
+ */
+async function performDiceRoll(quantity, sides) {
+  const isLargeCalculation = quantity * sides > CONFIG.CHUNK_SIZE_CALCULATION_THRESHOLD;
 
-      if (reply.length > 2000) {
-        return interaction.editReply({
-          content:
-            "The result is too long to send as a message, here is a file instead.",
-          files: [
-            {
-              attachment: Buffer.from(reply),
-              name: "roll.md",
-            },
-          ],
-        });
-      }
+  if (isLargeCalculation) {
+    return await performChunkedRoll(quantity, sides);
+  } else {
+    return roll(`${quantity}d${sides}`);
+  }
+}
 
-      return interaction.editReply(reply);
+/**
+ * Performs chunked dice roll for large calculations
+ * @param {number} quantity - Total number of dice
+ * @param {number} sides - Number of sides per die
+ * @returns {Promise<{results: number[], total: number}>} Combined results
+ */
+async function performChunkedRoll(quantity, sides) {
+  const chunkSize = Math.min(100, Math.max(1, Math.floor(10000 / sides)));
+  const results = [];
+  let total = 0;
+
+  for (let processed = 0; processed < quantity; processed += chunkSize) {
+    const currentChunkSize = Math.min(chunkSize, quantity - processed);
+    const chunkResult = roll(`${currentChunkSize}d${sides}`);
+
+    results.push(...chunkResult.results);
+    total += chunkResult.total;
+
+    // Yield control periodically to prevent blocking
+    if (processed % (chunkSize * 10) === 0) {
+      await new Promise(resolve => setImmediate(resolve));
     }
   }
 
-  // ===== TRACKER SUBCOMMAND HANDLERS =====
+  return { results, total };
+}
 
-  async function trackerAdd(interaction) {
-    const name = interaction.options.getString("name").toLowerCase().trim();
+// ===== TRACKER SUBCOMMAND HANDLERS =====
+
+/**
+ * Handles tracker add subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleTrackerAdd(interaction) {
+  try {
+    const rawName = interaction.options.getString("name");
     const quantity = interaction.options.getInteger("quantity");
 
-    if (quantity < 1 || !Number.isInteger(quantity))
-      return await interaction.followUp(
-        "The quantity must be an integer greater than 0."
-      );
+    const name = validateAndSanitizeString(rawName, CONFIG.MAX_ITEM_NAME_LENGTH).toLowerCase();
+    validateNumber(quantity, 1);
 
-    if (name.length > 100)
-      return await interaction.followUp(
-        "Item name must be 100 characters or less."
-      );
+    await withDatabase(async (client) => {
+      const collection = client.db().collection(CONFIG.COLLECTION_NAMES.TRACKERS);
 
-    let mongo;
-    try {
-      mongo = await connect();
-      const collection = mongo.db().collection("trackers");
-
-      const data = await collection.findOneAndUpdate(
+      const updateResult = await collection.findOneAndUpdate(
         { channel: interaction.channel.id, name },
         {
           $inc: { quantity },
           $setOnInsert: {
             channel: interaction.channel.id,
             name,
-            createdAt: new Date()
+            createdAt: new Date(),
           },
-          $set: { updatedAt: new Date() }
+          $set: { updatedAt: new Date() },
         },
         { upsert: true, returnDocument: "after" }
       );
 
-      // if the new quantity is 0 or negative, remove the document
-      if (data.quantity <= 0) {
+      const oldQuantity = updateResult.quantity - quantity;
+
+      if (updateResult.quantity <= 0) {
         await collection.deleteOne({ channel: interaction.channel.id, name });
-        await interaction.followUp(
-          `Changed the quantity of **${name}** from \`${
-            data.quantity - quantity
-          }\` to \`0\`. Removed the item from the tracker.`
+        await interaction.editReply(
+          `Changed the quantity of **${name}** from \`${oldQuantity}\` to \`0\`. Removed the item from the tracker.`
         );
       } else {
-        await interaction.followUp(
-          `Changed the quantity of **${name}** from \`${
-            data.quantity - quantity
-          }\` to \`${data.quantity}\`.`
+        await interaction.editReply(
+          `Changed the quantity of **${name}** from \`${oldQuantity}\` to \`${updateResult.quantity}\`.`
         );
       }
-    } catch (error) {
-      console.error("Error in tracker add:", error);
-      await interaction.followUp("An error occurred while updating the tracker.");
-    } finally {
-      if (mongo) await mongo.close();
+    });
+  } catch (error) {
+    console.error("Error in tracker add:", error);
+
+    if (error.message.includes("characters or less")) {
+      await interaction.editReply(ERROR_MESSAGES.ITEM_NAME_TOO_LONG);
+    } else if (error.message.includes("integer")) {
+      await interaction.editReply(ERROR_MESSAGES.INVALID_QUANTITY);
+    } else {
+      await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
     }
   }
+}
 
-  async function trackerRemove(interaction) {
-    const name = interaction.options.getString("name").toLowerCase().trim();
+/**
+ * Handles tracker remove subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleTrackerRemove(interaction) {
+  try {
+    const rawName = interaction.options.getString("name");
     const quantity = interaction.options.getInteger("quantity");
 
-    if (quantity < 1 || !Number.isInteger(quantity))
-      return await interaction.followUp(
-        "The quantity must be an integer greater than 0."
-      );
+    const name = validateAndSanitizeString(rawName, CONFIG.MAX_ITEM_NAME_LENGTH).toLowerCase();
+    validateNumber(quantity, 1);
 
-    let mongo;
-    try {
-      mongo = await connect();
-      const collection = mongo.db().collection("trackers");
+    await withDatabase(async (client) => {
+      const collection = client.db().collection(CONFIG.COLLECTION_NAMES.TRACKERS);
 
-      // Check if item exists first
+      // Check if item exists
       const existingItem = await collection.findOne({
         channel: interaction.channel.id,
-        name
+        name,
       });
 
       if (!existingItem) {
-        return await interaction.followUp(
-          `Item **${name}** not found in the tracker.`
-        );
+        await interaction.editReply(`Item **${name}** ${ERROR_MESSAGES.ITEM_NOT_FOUND.toLowerCase()}`);
+        return;
       }
 
-      const data = await collection.findOneAndUpdate(
+      const updateResult = await collection.findOneAndUpdate(
         { channel: interaction.channel.id, name },
         {
           $inc: { quantity: -quantity },
-          $set: { updatedAt: new Date() }
+          $set: { updatedAt: new Date() },
         },
         { returnDocument: "after" }
       );
 
-      // if the new quantity is 0 or negative, remove the document
-      if (data.quantity <= 0) {
+      const oldQuantity = updateResult.quantity + quantity;
+
+      if (updateResult.quantity <= 0) {
         await collection.deleteOne({ channel: interaction.channel.id, name });
-        await interaction.followUp(
-          `Changed the quantity of **${name}** from \`${
-            data.quantity + quantity
-          }\` to \`0\`. Removed the item from the tracker.`
+        await interaction.editReply(
+          `Changed the quantity of **${name}** from \`${oldQuantity}\` to \`0\`. Removed the item from the tracker.`
         );
       } else {
-        await interaction.followUp(
-          `Changed the quantity of **${name}** from \`${
-            data.quantity + quantity
-          }\` to \`${data.quantity}\`.`
+        await interaction.editReply(
+          `Changed the quantity of **${name}** from \`${oldQuantity}\` to \`${updateResult.quantity}\`.`
         );
       }
-    } catch (error) {
-      console.error("Error in tracker remove:", error);
-      await interaction.followUp("An error occurred while updating the tracker.");
-    } finally {
-      if (mongo) await mongo.close();
+    });
+  } catch (error) {
+    console.error("Error in tracker remove:", error);
+
+    if (error.message.includes("integer")) {
+      await interaction.editReply(ERROR_MESSAGES.INVALID_QUANTITY);
+    } else {
+      await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
     }
   }
+}
 
-  async function trackerList(interaction) {
-    let mongo;
-    try {
-      mongo = await connect();
-      const collection = mongo.db().collection("trackers");
+/**
+ * Handles tracker list subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleTrackerList(interaction) {
+  try {
+    await withDatabase(async (client) => {
+      const collection = client.db().collection(CONFIG.COLLECTION_NAMES.TRACKERS);
 
-      const data = await collection
+      const items = await collection
         .find({ channel: interaction.channel.id })
         .sort({ name: 1 })
         .toArray();
 
-      if (!data.length) {
-        return await interaction.followUp("The tracker is empty.");
+      if (!items.length) {
+        await interaction.editReply(ERROR_MESSAGES.TRACKER_EMPTY);
+        return;
       }
 
-      const totalItems = data.reduce((sum, item) => sum + item.quantity, 0);
-      const header = `**Tracker Contents** (${data.length} items, ${totalItems} total):\n\n`;
-
-      const itemList = data
+      const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
+      const header = `**Tracker Contents** (${items.length} items, ${totalItems} total):\n\n`;
+      const itemList = items
         .map((item, index) => `${index + 1}. **${item.name}**: ${item.quantity}`)
         .join("\n");
 
       const message = header + itemList;
 
-      if (message.length > 1900) {
-        const dataJSON = {};
-        data.forEach((item) => {
-          dataJSON[item.name] = item.quantity;
-        });
+      if (message.length > CONFIG.TRACKER_MESSAGE_LIMIT) {
+        const dataJSON = items.reduce((acc, item) => {
+          acc[item.name] = item.quantity;
+          return acc;
+        }, {});
 
-        return await interaction.followUp({
-          content: `**Tracker Contents** (${data.length} items, ${totalItems} total)\n\nThe tracker is too large to display in a message, so here is a JSON file instead.`,
-          files: [
-            {
-              attachment: Buffer.from(JSON.stringify(dataJSON, null, 2)),
-              name: `tracker-${interaction.channel.id}.json`,
-            },
-          ],
+        await interaction.editReply({
+          content: `**Tracker Contents** (${items.length} items, ${totalItems} total)\n\nThe tracker is too large to display in a message, so here is a JSON file instead.`,
+          files: [{
+            attachment: Buffer.from(JSON.stringify(dataJSON, null, 2), "utf8"),
+            name: `tracker-${interaction.channel.id}.json`,
+          }],
         });
+      } else {
+        await interaction.editReply(message);
       }
-
-      await interaction.followUp(message);
-    } catch (error) {
-      console.error("Error in tracker list:", error);
-      await interaction.followUp("An error occurred while retrieving the tracker.");
-    } finally {
-      if (mongo) await mongo.close();
-    }
+    });
+  } catch (error) {
+    console.error("Error in tracker list:", error);
+    await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
   }
+}
 
-  async function trackerClear(interaction) {
-    // check if the user has the MANAGE_CHANNELS permission
-    if (
-      !interaction.channel
-        .permissionsFor(interaction.member)
-        .has(PermissionFlagsBits.ManageChannels)
-    )
-      return await interaction.followUp(
-        "You must have the `MANAGE_CHANNELS` permission to clear the tracker."
-      );
+/**
+ * Handles tracker clear subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleTrackerClear(interaction) {
+  try {
+    // Check permissions
+    if (!interaction.channel.permissionsFor(interaction.member)?.has(PermissionFlagsBits.ManageChannels)) {
+      await interaction.editReply(ERROR_MESSAGES.NO_PERMISSION);
+      return;
+    }
 
-    let mongo;
-    try {
-      mongo = await connect();
-      const collection = mongo.db().collection("trackers");
+    await withDatabase(async (client) => {
+      const collection = client.db().collection(CONFIG.COLLECTION_NAMES.TRACKERS);
 
       const result = await collection.deleteMany({
-        channel: interaction.channel.id
+        channel: interaction.channel.id,
       });
 
       if (result.deletedCount === 0) {
-        await interaction.followUp("The tracker is already empty.");
+        await interaction.editReply("The tracker is already empty.");
       } else {
-        await interaction.followUp(
-          `Cleared ${result.deletedCount} item${result.deletedCount === 1 ? '' : 's'} from the tracker.`
-        );
+        const itemText = result.deletedCount === 1 ? "item" : "items";
+        await interaction.editReply(`Cleared ${result.deletedCount} ${itemText} from the tracker.`);
       }
-    } catch (error) {
-      console.error("Error in tracker clear:", error);
-      await interaction.followUp("An error occurred while clearing the tracker.");
-    } finally {
-      if (mongo) await mongo.close();
-    }
+    });
+  } catch (error) {
+    console.error("Error in tracker clear:", error);
+    await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
   }
+}
 
-  async function trackerSearch(interaction) {
-    const searchTerm = interaction.options.getString("name").toLowerCase().trim();
+/**
+ * Handles tracker search subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleTrackerSearch(interaction) {
+  try {
+    const rawSearchTerm = interaction.options.getString("name");
+    const searchTerm = validateAndSanitizeString(rawSearchTerm).toLowerCase();
 
-    if (searchTerm.length < 2) {
-      return await interaction.followUp(
-        "Search term must be at least 2 characters long."
-      );
+    if (searchTerm.length < CONFIG.MIN_SEARCH_TERM_LENGTH) {
+      await interaction.editReply(ERROR_MESSAGES.SEARCH_TERM_TOO_SHORT);
+      return;
     }
 
-    let mongo;
-    try {
-      mongo = await connect();
-      const collection = mongo.db().collection("trackers");
+    await withDatabase(async (client) => {
+      const collection = client.db().collection(CONFIG.COLLECTION_NAMES.TRACKERS);
 
-      // Use MongoDB text search if available, otherwise fallback to regex
-      const regexQuery = {
-        channel: interaction.channel.id,
-        name: { $regex: searchTerm, $options: "i" }
-      };
-
-      const data = await collection
-        .find(regexQuery)
+      // First try regex search
+      let results = await collection
+        .find({
+          channel: interaction.channel.id,
+          name: { $regex: searchTerm, $options: "i" },
+        })
         .sort({ name: 1 })
         .toArray();
 
-      // If no exact matches, use fuzzy matching
-      let results = data;
+      // If no results, try fuzzy matching
       if (results.length === 0) {
         const allItems = await collection
           .find({ channel: interaction.channel.id })
           .toArray();
 
         if (!allItems.length) {
-          return await interaction.followUp("The tracker is empty.");
+          await interaction.editReply(ERROR_MESSAGES.TRACKER_EMPTY);
+          return;
         }
 
         results = allItems
-          .filter(item => calculateSimilarity(searchTerm, item.name) > 0.5)
+          .filter(item => calculateSimilarity(searchTerm, item.name) > CONFIG.SIMILARITY_THRESHOLD)
           .sort((a, b) =>
             calculateSimilarity(searchTerm, b.name) - calculateSimilarity(searchTerm, a.name)
           );
       }
 
       if (!results.length) {
-        return await interaction.followUp(`No items found for: **${searchTerm}**`);
+        await interaction.editReply(`No items found for: **${searchTerm}**`);
+        return;
       }
 
       const message = results.length === 1
@@ -747,29 +913,51 @@ async function startBot() {
             .map((item, index) => `${index + 1}. **${item.name}**: ${item.quantity}`)
             .join("\n");
 
-      await interaction.followUp(message);
-    } catch (error) {
-      console.error("Error in tracker search:", error);
-      await interaction.followUp("An error occurred while searching the tracker.");
-    } finally {
-      if (mongo) await mongo.close();
-    }
-  }
-
-  // ===== COMMAND REGISTRATION =====
-
-  async function registerCommands({ client }) {
-    await client.rest.put(Routes.applicationCommands(client.application.id), {
-      body: commands,
+      await interaction.editReply(message);
     });
+  } catch (error) {
+    console.error("Error in tracker search:", error);
 
-    console.log(
-      `Global slash commands registered: ${commands.map((c) => c.name)}`
-    );
+    if (error.message.includes("characters")) {
+      await interaction.editReply(ERROR_MESSAGES.SEARCH_TERM_TOO_SHORT);
+    } else {
+      await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+    }
   }
 }
 
 // ===== MAIN ENTRY POINT =====
 
-// start the bot
-await startBot();
+/**
+ * Main application entry point
+ */
+async function main() {
+  try {
+    console.log("🚀 Starting Arcanum Discord Bot...");
+
+    // Validate environment
+    validateEnvironment();
+    console.log("✅ Environment validation passed");
+
+    // Start the bot
+    await startBot();
+
+  } catch (error) {
+    console.error("❌ Failed to start bot:", error);
+    process.exit(1);
+  }
+}
+
+// Handle uncaught exceptions
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught Exception:", error);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+  process.exit(1);
+});
+
+// Start the application
+await main();
