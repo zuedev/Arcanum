@@ -18,6 +18,7 @@ A Discord bot for tabletop gaming enthusiasts, featuring dice rolling and item t
 - **Remove items**: `/tracker remove name:sword quantity:1`
 - **List all items**: `/tracker list`
 - **Search for items**: `/tracker search name:sw` (supports fuzzy matching)
+- **Rename items**: `/tracker rename old_name:sword new_name:blade` (automatically merges if target name exists)
 - **Clear tracker**: `/tracker clear` (requires user to have the MANAGE_CHANNELS permission)
 - Per-channel tracking with automatic cleanup of zero-quantity items
 
@@ -92,6 +93,7 @@ npm test
 /tracker remove name:"Health Potion" quantity:1
 /tracker list
 /tracker search name:potion
+/tracker rename old_name:"Health Potion" new_name:"Healing Elixir"
 /tracker clear  # Requires MANAGE_CHANNELS permission
 ```
 

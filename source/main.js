@@ -354,6 +354,23 @@ function createCommands() {
               .setRequired(true)
           )
       )
+      .addSubcommand((sub) =>
+        sub
+          .setName("rename")
+          .setDescription("Rename an item in the tracker")
+          .addStringOption((opt) =>
+            opt
+              .setName("old_name")
+              .setDescription("The current name of the item")
+              .setRequired(true)
+          )
+          .addStringOption((opt) =>
+            opt
+              .setName("new_name")
+              .setDescription("The new name for the item")
+              .setRequired(true)
+          )
+      )
   );
 
   // Roll command with all dice types
@@ -854,6 +871,7 @@ async function handleTrackerCommand(interaction) {
     list: handleTrackerList,
     clear: handleTrackerClear,
     search: handleTrackerSearch,
+    rename: handleTrackerRename,
   };
 
   const handler = subcommandHandlers[subcommand];
@@ -1194,6 +1212,105 @@ async function handleTrackerClear(interaction) {
   } catch (error) {
     console.error("Error in tracker clear:", error);
     await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+  }
+}
+
+/**
+ * Handles tracker rename subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleTrackerRename(interaction) {
+  try {
+    const rawOldName = interaction.options.getString("old_name");
+    const rawNewName = interaction.options.getString("new_name");
+
+    const oldName = validateAndSanitizeString(
+      rawOldName,
+      CONFIG.MAX_ITEM_NAME_LENGTH
+    ).toLowerCase();
+    const newName = validateAndSanitizeString(
+      rawNewName,
+      CONFIG.MAX_ITEM_NAME_LENGTH
+    ).toLowerCase();
+
+    if (oldName === newName) {
+      await interaction.editReply("The old name and new name cannot be the same.");
+      return;
+    }
+
+    await withDatabase(async (client) => {
+      const collection = client
+        .db()
+        .collection(CONFIG.COLLECTION_NAMES.TRACKERS);
+
+      // Check if the old item exists
+      const existingItem = await collection.findOne({
+        channel: interaction.channel.id,
+        name: oldName,
+      });
+
+      if (!existingItem) {
+        await interaction.editReply(
+          `Item **${oldName}** ${ERROR_MESSAGES.ITEM_NOT_FOUND.toLowerCase()}`
+        );
+        return;
+      }
+
+      // Check if an item with the new name already exists
+      const conflictingItem = await collection.findOne({
+        channel: interaction.channel.id,
+        name: newName,
+      });
+
+      if (conflictingItem) {
+        // Merge the quantities
+        const totalQuantity = existingItem.quantity + conflictingItem.quantity;
+
+        // Update the conflicting item with the merged quantity
+        await collection.updateOne(
+          { channel: interaction.channel.id, name: newName },
+          {
+            $set: {
+              quantity: totalQuantity,
+              updatedAt: new Date(),
+            },
+          }
+        );
+
+        // Delete the old item
+        await collection.deleteOne({
+          channel: interaction.channel.id,
+          name: oldName,
+        });
+
+        await interaction.editReply(
+          `Renamed **${oldName}** to **${newName}** and merged with existing item. New quantity: \`${totalQuantity}\`.`
+        );
+      } else {
+        // Simple rename without merging
+        await collection.updateOne(
+          { channel: interaction.channel.id, name: oldName },
+          {
+            $set: {
+              name: newName,
+              updatedAt: new Date(),
+            },
+          }
+        );
+
+        await interaction.editReply(
+          `Renamed **${oldName}** to **${newName}**.`
+        );
+      }
+    });
+  } catch (error) {
+    console.error("Error in tracker rename:", error);
+
+    if (error.message.includes("characters or less")) {
+      await interaction.editReply(ERROR_MESSAGES.ITEM_NAME_TOO_LONG);
+    } else {
+      await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+    }
   }
 }
 
