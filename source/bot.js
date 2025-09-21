@@ -51,10 +51,6 @@ export default async () => {
   client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isCommand()) return;
 
-    // ignore non-dev commands in dev guild
-    if (process.env.DEVELOPMENT_GUILD_ID)
-      if (interaction.guild.id !== process.env.DEVELOPMENT_GUILD_ID) return;
-
     try {
       // defer reply to give the bot time to process
       await interaction.deferReply();
@@ -84,35 +80,13 @@ export default async () => {
       commands.push(data);
     }
 
-    if (process.env.DEVELOPMENT_GUILD_ID) {
-      console.log(
-        "Development guild ID set, registering slash commands there instead."
-      );
+    await client.rest.put(Routes.applicationCommands(client.application.id), {
+      body: commands,
+    });
 
-      await client.rest.put(
-        Routes.applicationGuildCommands(
-          client.application.id,
-          process.env.DEVELOPMENT_GUILD_ID
-        ),
-        {
-          body: commands,
-        }
-      );
-
-      console.log(
-        `Slash commands registered in development guild: ${commands.map(
-          (c) => c.name
-        )}`
-      );
-    } else {
-      await client.rest.put(Routes.applicationCommands(client.application.id), {
-        body: commands,
-      });
-
-      console.log(
-        `Global slash commands registered: ${commands.map((c) => c.name)}`
-      );
-    }
+    console.log(
+      `Global slash commands registered: ${commands.map((c) => c.name)}`
+    );
   }
 };
 
