@@ -88,7 +88,7 @@ export default {
 };
 
 async function add({ interaction }) {
-  const name = interaction.options.getString("name").toLowerCase();
+  const name = interaction.options.getString("name").toLowerCase().trim();
   const quantity = interaction.options.getInteger("quantity");
 
   if (quantity < 1 || !Number.isInteger(quantity))
@@ -96,43 +96,55 @@ async function add({ interaction }) {
       "The quantity must be an integer greater than 0."
     );
 
-  const mongo = await connect();
+  if (name.length > 100)
+    return await interaction.followUp(
+      "Item name must be 100 characters or less."
+    );
 
-  const data = await mongo
-    .db()
-    .collection("trackers")
-    .findOneAndUpdate(
+  let mongo;
+  try {
+    mongo = await connect();
+    const collection = mongo.db().collection("trackers");
+
+    const data = await collection.findOneAndUpdate(
       { channel: interaction.channel.id, name },
       {
         $inc: { quantity },
-        $setOnInsert: { channel: interaction.channel.id, name },
+        $setOnInsert: {
+          channel: interaction.channel.id,
+          name,
+          createdAt: new Date()
+        },
+        $set: { updatedAt: new Date() }
       },
       { upsert: true, returnDocument: "after" }
     );
 
-  // if the new quantity is 0, remove the document
-  if (data.quantity === 0) {
-    await mongo
-      .db()
-      .collection("trackers")
-      .deleteOne({ channel: interaction.channel.id, name });
-
-    await interaction.followUp(
-      `Changed the quantity of **${name}** from \`${
-        data.quantity - quantity
-      }\` to \`0\`. Removed the item from the tracker.`
-    );
-  } else {
-    await interaction.followUp(
-      `Changed the quantity of **${name}** from \`${
-        data.quantity - quantity
-      }\` to \`${data.quantity}\`.`
-    );
+    // if the new quantity is 0 or negative, remove the document
+    if (data.quantity <= 0) {
+      await collection.deleteOne({ channel: interaction.channel.id, name });
+      await interaction.followUp(
+        `Changed the quantity of **${name}** from \`${
+          data.quantity - quantity
+        }\` to \`0\`. Removed the item from the tracker.`
+      );
+    } else {
+      await interaction.followUp(
+        `Changed the quantity of **${name}** from \`${
+          data.quantity - quantity
+        }\` to \`${data.quantity}\`.`
+      );
+    }
+  } catch (error) {
+    console.error("Error in tracker add:", error);
+    await interaction.followUp("An error occurred while updating the tracker.");
+  } finally {
+    if (mongo) await mongo.close();
   }
 }
 
 async function remove({ interaction }) {
-  const name = interaction.options.getString("name").toLowerCase();
+  const name = interaction.options.getString("name").toLowerCase().trim();
   const quantity = interaction.options.getInteger("quantity");
 
   if (quantity < 1 || !Number.isInteger(quantity))
@@ -140,80 +152,103 @@ async function remove({ interaction }) {
       "The quantity must be an integer greater than 0."
     );
 
-  const mongo = await connect();
+  let mongo;
+  try {
+    mongo = await connect();
+    const collection = mongo.db().collection("trackers");
 
-  const data = await mongo
-    .db()
-    .collection("trackers")
-    .findOneAndUpdate(
+    // Check if item exists first
+    const existingItem = await collection.findOne({
+      channel: interaction.channel.id,
+      name
+    });
+
+    if (!existingItem) {
+      return await interaction.followUp(
+        `Item **${name}** not found in the tracker.`
+      );
+    }
+
+    const data = await collection.findOneAndUpdate(
       { channel: interaction.channel.id, name },
       {
         $inc: { quantity: -quantity },
-        $setOnInsert: { channel: interaction.channel.id, name },
+        $set: { updatedAt: new Date() }
       },
-      { upsert: true, returnDocument: "after" }
+      { returnDocument: "after" }
     );
 
-  // if the new quantity is 0, remove the document
-  if (data.quantity === 0) {
-    await mongo
-      .db()
-      .collection("trackers")
-      .deleteOne({ channel: interaction.channel.id, name });
-
-    await interaction.followUp(
-      `Changed the quantity of **${name}** from \`${
-        data.quantity + quantity
-      }\` to \`0\`. Removed the item from the tracker.`
-    );
-  } else {
-    await interaction.followUp(
-      `Changed the quantity of **${name}** from \`${
-        data.quantity + quantity
-      }\` to \`${data.quantity}\`.`
-    );
+    // if the new quantity is 0 or negative, remove the document
+    if (data.quantity <= 0) {
+      await collection.deleteOne({ channel: interaction.channel.id, name });
+      await interaction.followUp(
+        `Changed the quantity of **${name}** from \`${
+          data.quantity + quantity
+        }\` to \`0\`. Removed the item from the tracker.`
+      );
+    } else {
+      await interaction.followUp(
+        `Changed the quantity of **${name}** from \`${
+          data.quantity + quantity
+        }\` to \`${data.quantity}\`.`
+      );
+    }
+  } catch (error) {
+    console.error("Error in tracker remove:", error);
+    await interaction.followUp("An error occurred while updating the tracker.");
+  } finally {
+    if (mongo) await mongo.close();
   }
-
-  await mongo.close();
 }
 
 async function list({ interaction }) {
-  const mongo = await connect();
+  let mongo;
+  try {
+    mongo = await connect();
+    const collection = mongo.db().collection("trackers");
 
-  const data = await mongo
-    .db()
-    .collection("trackers")
-    .find({ channel: interaction.channel.id })
-    .toArray();
+    const data = await collection
+      .find({ channel: interaction.channel.id })
+      .sort({ name: 1 })
+      .toArray();
 
-  await mongo.close();
+    if (!data.length) {
+      return await interaction.followUp("The tracker is empty.");
+    }
 
-  if (!data.length) return await interaction.followUp("The tracker is empty.");
+    const totalItems = data.reduce((sum, item) => sum + item.quantity, 0);
+    const header = `**Tracker Contents** (${data.length} items, ${totalItems} total):\n\n`;
 
-  const message = data
-    .map((item) => `**${item.name}**: ${item.quantity}`)
-    .join("\n");
+    const itemList = data
+      .map((item, index) => `${index + 1}. **${item.name}**: ${item.quantity}`)
+      .join("\n");
 
-  if (message.length > 2000) {
-    const dataJSON = {};
+    const message = header + itemList;
 
-    data.forEach((item) => {
-      dataJSON[item.name] = item.quantity;
-    });
+    if (message.length > 1900) {
+      const dataJSON = {};
+      data.forEach((item) => {
+        dataJSON[item.name] = item.quantity;
+      });
 
-    return await interaction.followUp({
-      content:
-        "The tracker is too large to be displayed in a single message, so here is a JSON file instead.",
-      files: [
-        {
-          attachment: Buffer.from(JSON.stringify(dataJSON, null, 2)),
-          name: `tracker-${interaction.channel.id}.json`,
-        },
-      ],
-    });
+      return await interaction.followUp({
+        content: `**Tracker Contents** (${data.length} items, ${totalItems} total)\n\nThe tracker is too large to display in a message, so here is a JSON file instead.`,
+        files: [
+          {
+            attachment: Buffer.from(JSON.stringify(dataJSON, null, 2)),
+            name: `tracker-${interaction.channel.id}.json`,
+          },
+        ],
+      });
+    }
+
+    await interaction.followUp(message);
+  } catch (error) {
+    console.error("Error in tracker list:", error);
+    await interaction.followUp("An error occurred while retrieving the tracker.");
+  } finally {
+    if (mongo) await mongo.close();
   }
-
-  await interaction.followUp(message);
 }
 
 async function clear({ interaction }) {
@@ -227,44 +262,88 @@ async function clear({ interaction }) {
       "You must have the `MANAGE_CHANNELS` permission to clear the tracker."
     );
 
-  const mongo = await connect();
+  let mongo;
+  try {
+    mongo = await connect();
+    const collection = mongo.db().collection("trackers");
 
-  await mongo
-    .db()
-    .collection("trackers")
-    .deleteMany({ channel: interaction.channel.id });
+    const result = await collection.deleteMany({
+      channel: interaction.channel.id
+    });
 
-  await mongo.close();
-
-  await interaction.followUp("All items have been cleared from the tracker.");
+    if (result.deletedCount === 0) {
+      await interaction.followUp("The tracker is already empty.");
+    } else {
+      await interaction.followUp(
+        `Cleared ${result.deletedCount} item${result.deletedCount === 1 ? '' : 's'} from the tracker.`
+      );
+    }
+  } catch (error) {
+    console.error("Error in tracker clear:", error);
+    await interaction.followUp("An error occurred while clearing the tracker.");
+  } finally {
+    if (mongo) await mongo.close();
+  }
 }
 
 async function search({ interaction }) {
-  const name = interaction.options.getString("name").toLowerCase();
+  const searchTerm = interaction.options.getString("name").toLowerCase().trim();
 
-  const mongo = await connect();
+  if (searchTerm.length < 2) {
+    return await interaction.followUp(
+      "Search term must be at least 2 characters long."
+    );
+  }
 
-  const data = await mongo
-    .db()
-    .collection("trackers")
-    .find({ channel: interaction.channel.id })
-    .toArray();
+  let mongo;
+  try {
+    mongo = await connect();
+    const collection = mongo.db().collection("trackers");
 
-  await mongo.close();
+    // Use MongoDB text search if available, otherwise fallback to regex
+    const regexQuery = {
+      channel: interaction.channel.id,
+      name: { $regex: searchTerm, $options: "i" }
+    };
 
-  if (!data.length) return await interaction.followUp("The tracker is empty.");
+    const data = await collection
+      .find(regexQuery)
+      .sort({ name: 1 })
+      .toArray();
 
-  const results = data.filter(
-    (item) =>
-      calculateSimilarity(name, item.name) > 0.5 || item.name.includes(name)
-  );
+    // If no exact matches, use fuzzy matching
+    let results = data;
+    if (results.length === 0) {
+      const allItems = await collection
+        .find({ channel: interaction.channel.id })
+        .toArray();
 
-  if (!results.length)
-    return await interaction.followUp(`No items found for: **${name}**`);
+      if (!allItems.length) {
+        return await interaction.followUp("The tracker is empty.");
+      }
 
-  const message = results
-    .map((item) => `**${item.name}**: ${item.quantity}`)
-    .join("\n");
+      results = allItems
+        .filter(item => calculateSimilarity(searchTerm, item.name) > 0.5)
+        .sort((a, b) =>
+          calculateSimilarity(searchTerm, b.name) - calculateSimilarity(searchTerm, a.name)
+        );
+    }
 
-  await interaction.followUp(message);
+    if (!results.length) {
+      return await interaction.followUp(`No items found for: **${searchTerm}**`);
+    }
+
+    const message = results.length === 1
+      ? `Found 1 item:\n**${results[0].name}**: ${results[0].quantity}`
+      : `Found ${results.length} items:\n` + results
+          .map((item, index) => `${index + 1}. **${item.name}**: ${item.quantity}`)
+          .join("\n");
+
+    await interaction.followUp(message);
+  } catch (error) {
+    console.error("Error in tracker search:", error);
+    await interaction.followUp("An error occurred while searching the tracker.");
+  } finally {
+    if (mongo) await mongo.close();
+  }
 }
