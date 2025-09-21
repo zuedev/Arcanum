@@ -1,41 +1,51 @@
-# Arcanum
+# Arcanum Discord Bot
 
-<img src="icon-big.png" height="100" alt="Arcanum Bot Avatar">
-
-> A streamlined Discord bot for essential TTRPG functionality.
-
-Arcanum is a focused Discord bot designed to provide core tabletop RPG functionality on Discord. It offers comprehensive dice rolling, persistent item tracking, and basic utilities. Built with Node.js and Discord.js, it's lightweight, reliable, and easy to deploy.
+A Discord bot for tabletop gaming enthusiasts, featuring dice rolling and item tracking functionality.
 
 ## Features
 
-- **🎲 Dice Rolling**: Full dice rolling system supporting standard dice (d4, d6, d8, d10, d12, d20, d100) and custom dice
-- **📦 Item Tracking**: MongoDB-based persistent item tracking system with search functionality
-- **🏓 Bot Status**: Simple ping command to check bot responsiveness
-- **🔧 Minimal Configuration**: Simple environment-based setup
+### 🎲 Dice Rolling
 
-## Quick Start
+- Roll standard dice: `/roll d4`, `/roll d6`, `/roll d8`, `/roll d10`, `/roll d12`, `/roll d20`, `/roll d100`
+- Roll custom dice: `/roll dx sides:20 quantity:3`
+- Roll multiple dice: `/roll d20 quantity:5`
+- Supports up to 100 dice per roll with a maximum of 100 sides per die
+- Optimized for large rolls with chunked processing to avoid timeouts
 
-### Using the Public Instance
+### 📋 Item Tracking
 
-The easiest way to get started is by inviting our hosted bot to your server:
+- **Add items**: `/tracker add name:sword quantity:2`
+- **Remove items**: `/tracker remove name:sword quantity:1`
+- **List all items**: `/tracker list`
+- **Search for items**: `/tracker search name:sw` (supports fuzzy matching)
+- **Clear tracker**: `/tracker clear` (requires user to have the MANAGE_CHANNELS permission)
+- Per-channel tracking with automatic cleanup of zero-quantity items
 
-**[🔗 Invite Arcanum to Your Server](https://discord.com/oauth2/authorize?client_id=1274868942753628210)**
+### 🏓 Utility
+
+- **Ping**: `/ping` - Check if the bot is responsive
+
+## Installation
+
+### Add to Your Server
+
+[**Click here to add Arcanum to your Discord server**](https://discord.com/oauth2/authorize?client_id=1274868942753628210)
 
 ### Self-Hosting
 
 #### Prerequisites
 
-- Node.js 18+
+- Node.js 18 or higher
 - MongoDB database
-- Discord Bot Token
+- Discord bot token
 
-#### Installation
+#### Setup
 
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/zuedev/arcanum.git
-   cd arcanum
+   git clone https://github.com/zuedev/Arcanum.git
+   cd Arcanum
    ```
 
 2. Install dependencies:
@@ -44,119 +54,71 @@ The easiest way to get started is by inviting our hosted bot to your server:
    npm install
    ```
 
-3. Configure environment variables:
+3. Create a `.env` file with your configuration:
 
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
+   ```env
+   DISCORD_BOT_TOKEN=your_bot_token_here
+   MONGODB_URI=mongodb+srv://user:password@cluster.mongodb.net/arcanum
    ```
 
 4. Start the bot:
    ```bash
-   npm start
+   npm run dev  # Development mode with .env file
+   npm start    # Production mode
    ```
 
-## Commands
+#### Testing
 
-### `/roll` - Dice Rolling System
-
-- `/roll d20` - Roll a d20 (with optional quantity)
-- `/roll d12`, `/roll d10`, `/roll d8`, `/roll d6`, `/roll d4` - Roll standard dice
-- `/roll d100` - Roll percentile dice
-- `/roll dx` - Roll custom dice with specified sides
-
-### `/tracker` - Item Tracking System
-
-- `/tracker add` - Add items to the tracker with quantities
-- `/tracker remove` - Remove items from the tracker
-- `/tracker list` - Display all tracked items
-- `/tracker search` - Search for specific items using fuzzy matching
-- `/tracker clear` - Clear all items (requires MANAGE_CHANNELS permission)
-
-### `/ping` - Bot Status
-
-- Simple command to check if the bot is responsive
-
-## Configuration
-
-### Required Environment Variables
-
-```bash
-ENVIRONMENT=production          # or development
-DISCORD_BOT_TOKEN=your_token   # Discord bot token
-MONGODB_URI=your_mongodb_uri   # MongoDB connection string
-```
-
-### Optional Configuration
-
-```bash
-# Development
-DEVELOPMENT_GUILD_ID=guild_id  # Restrict bot to specific guild during development
-```
-
-## Development
-
-### Development Setup
-
-1. Install dependencies: `npm install`
-2. Copy environment template: `cp .env.example .env`
-3. Configure your `.env` file with development values
-4. Run in development mode: `npm run dev`
-
-### Testing
+Run the test suite:
 
 ```bash
 npm test
 ```
 
-### Project Structure
+## Usage Examples
+
+### Dice Rolling
 
 ```
-source/
-├── main.js                           # Application entry point
-├── bot.js                            # Discord bot setup and event handling
-├── InteractionCreate.Commands/       # Slash command implementations
-│   ├── roll.js                      # Dice rolling commands
-│   ├── tracker.js                   # Item tracking system
-│   └── ping.js                      # Status command
-├── library/                         # Core utilities
-│   └── roll.js                      # Dice rolling engine
-├── controllers/                     # Database controllers
-│   └── mongo.js                     # MongoDB operations
-└── utilities/                       # Helper functions
-    └── calculateSimilarity.js       # String matching for tracker search
+/roll d20                    # Roll a single d20
+/roll d6 quantity:4          # Roll 4 d6 dice
+/roll dx sides:100 quantity:2 # Roll 2 custom 100-sided dice
 ```
 
-## Docker Deployment
+### Item Tracking
 
-Build and run with Docker:
-
-```bash
-docker build -t arcanum .
-docker run -e DISCORD_BOT_TOKEN=your_token -e MONGODB_URI=your_uri arcanum
 ```
+/tracker add name:"Health Potion" quantity:3
+/tracker remove name:"Health Potion" quantity:1
+/tracker list
+/tracker search name:potion
+/tracker clear  # Requires MANAGE_CHANNELS permission
+```
+
+## Technical Details
+
+- **Language**: JavaScript (ES Modules)
+- **Runtime**: Node.js
+- **Database**: MongoDB
+- **Discord Library**: discord.js v14
+- **Architecture**: Modular command system with centralized bot logic
+
+## Permissions Required
+
+The bot only requires the ability to register slash commands and send messages.
 
 ## Contributing
 
-Arcanum is open-source and welcomes contributions! Whether you're fixing bugs, adding features, or improving documentation, your help is appreciated.
-
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes and test thoroughly
-4. Commit your changes: `git commit -m 'Add some feature'`
-5. Push to the branch: `git push origin feature-name`
-6. Submit a pull request
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
 ## License
 
-This project is released into the public domain under the [Unlicense](LICENSE). You are free to use, modify, and distribute this software for any purpose without restriction.
+This project is open source and dedicated to the public domain. Feel free to use, modify, and distribute as needed.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/zuedev/arcanum/issues)
-- **Discord**: Join our community for support and updates
-- **Documentation**: Check this README and inline code documentation
-
----
-
-_Simple, reliable TTRPG tools for your Discord server!_ ✨
+For issues or questions, please open an issue on [GitHub](https://github.com/zuedev/Arcanum/issues).
