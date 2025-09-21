@@ -99,7 +99,7 @@ async function add({ interaction }) {
   const mongo = await connect();
 
   const data = await mongo
-    .db(process.env.ENVIRONMENT)
+    .db()
     .collection("trackers")
     .findOneAndUpdate(
       { channel: interaction.channel.id, name },
@@ -113,7 +113,7 @@ async function add({ interaction }) {
   // if the new quantity is 0, remove the document
   if (data.quantity === 0) {
     await mongo
-      .db(process.env.ENVIRONMENT)
+      .db()
       .collection("trackers")
       .deleteOne({ channel: interaction.channel.id, name });
 
@@ -143,7 +143,7 @@ async function remove({ interaction }) {
   const mongo = await connect();
 
   const data = await mongo
-    .db(process.env.ENVIRONMENT)
+    .db()
     .collection("trackers")
     .findOneAndUpdate(
       { channel: interaction.channel.id, name },
@@ -157,7 +157,7 @@ async function remove({ interaction }) {
   // if the new quantity is 0, remove the document
   if (data.quantity === 0) {
     await mongo
-      .db(process.env.ENVIRONMENT)
+      .db()
       .collection("trackers")
       .deleteOne({ channel: interaction.channel.id, name });
 
@@ -181,7 +181,7 @@ async function list({ interaction }) {
   const mongo = await connect();
 
   const data = await mongo
-    .db(process.env.ENVIRONMENT)
+    .db()
     .collection("trackers")
     .find({ channel: interaction.channel.id })
     .toArray();
@@ -230,7 +230,7 @@ async function clear({ interaction }) {
   const mongo = await connect();
 
   await mongo
-    .db(process.env.ENVIRONMENT)
+    .db()
     .collection("trackers")
     .deleteMany({ channel: interaction.channel.id });
 
@@ -245,7 +245,7 @@ async function search({ interaction }) {
   const mongo = await connect();
 
   const data = await mongo
-    .db(process.env.ENVIRONMENT)
+    .db()
     .collection("trackers")
     .find({ channel: interaction.channel.id })
     .toArray();
