@@ -1,4 +1,197 @@
-<h1>Privacy Policy</h1>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>~*~ Arcanum Privacy Policy ~*~</title>
+    <meta name="description" content="Privacy Policy for the Arcanum Discord Bot" />
+    <link rel="icon" href="../icon.png" />
+    <style>
+      body {
+        margin: 0;
+        padding: 20px;
+        background: #000000;
+        background-image:
+          radial-gradient(circle at 25% 25%, #003300 0%, transparent 50%),
+          radial-gradient(circle at 75% 75%, #000033 0%, transparent 50%);
+        color: #00ff00;
+        font-family: "Courier New", "Times New Roman", monospace;
+        text-align: center;
+        min-height: 100vh;
+      }
 
-I don't save anything except for your Discord ID, and only when you save
-something to the database.
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        border: 3px solid #00ff00;
+        border-radius: 10px;
+        background: rgba(0, 0, 0, 0.8);
+        box-shadow: 0 0 20px #00ff00;
+        animation: glow 2s ease-in-out infinite alternate;
+      }
+
+      @keyframes glow {
+        from { box-shadow: 0 0 20px #00ff00; }
+        to { box-shadow: 0 0 30px #00ff00, 0 0 40px #00ff00; }
+      }
+
+      h1 {
+        font-size: 3em;
+        color: #00ff00;
+        text-shadow: 0 0 10px #00ff00;
+        margin: 20px 0;
+        animation: pulse 1.5s ease-in-out infinite alternate;
+      }
+
+      @keyframes pulse {
+        from { text-shadow: 0 0 10px #00ff00; }
+        to { text-shadow: 0 0 20px #00ff00, 0 0 30px #00ff00; }
+      }
+
+      .content {
+        text-align: left;
+        font-size: 1.2em;
+        line-height: 1.6;
+        margin: 30px 0;
+      }
+
+      .section {
+        margin: 30px 0;
+        padding: 20px;
+        background: rgba(0, 20, 0, 0.5);
+        border: 2px dashed #ffff00;
+        border-radius: 10px;
+      }
+
+      .section h2 {
+        color: #ffff00;
+        text-align: center;
+        margin-bottom: 15px;
+        text-decoration: underline;
+      }
+
+      .highlight {
+        background: rgba(255, 255, 0, 0.1);
+        color: #ffff00;
+        padding: 2px 5px;
+        border-radius: 3px;
+      }
+
+      .back-button {
+        display: inline-block;
+        padding: 15px 30px;
+        background: linear-gradient(45deg, #003300, #006600);
+        color: #00ff00;
+        text-decoration: none;
+        font-size: 1.4em;
+        font-weight: bold;
+        border: 3px solid #00ff00;
+        border-radius: 5px;
+        text-shadow: 0 0 5px #00ff00;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        margin: 20px;
+      }
+
+      .back-button:hover {
+        background: linear-gradient(45deg, #006600, #009900);
+        box-shadow: 0 0 15px #00ff00;
+        transform: scale(1.05);
+      }
+
+      ul, li {
+        margin: 10px 0;
+      }
+
+      .footer {
+        margin-top: 50px;
+        padding: 20px;
+        border-top: 3px double #00ff00;
+        color: #888888;
+        font-size: 0.9em;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🔒 PRIVACY POLICY 🔒</h1>
+
+      <div class="section">
+        <h2>📝 The Simple Truth</h2>
+        <div class="content">
+          <p>We believe in keeping things <span class="highlight">simple and honest</span>. Here's exactly what we collect and why:</p>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>🗃️ What We Store</h2>
+        <div class="content">
+          <ul>
+            <li><strong>Discord Channel ID:</strong> To keep your tracker items organized per channel</li>
+            <li><strong>Item Names:</strong> Whatever you add to your tracker (converted to lowercase)</li>
+            <li><strong>Item Quantities:</strong> How many of each item you have</li>
+            <li><strong>Timestamps:</strong> When items were created or last updated</li>
+          </ul>
+          <p><span class="highlight">That's it!</span> No personal information, no message content, no user profiles.</p>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>🚫 What We DON'T Store</h2>
+        <div class="content">
+          <ul>
+            <li>❌ Your messages or chat history</li>
+            <li>❌ Your Discord username or profile</li>
+            <li>❌ Any personally identifiable information</li>
+            <li>❌ Voice data or media files</li>
+            <li>❌ Server information or member lists</li>
+            <li>❌ Any data outside of what you explicitly save with commands</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>🛡️ How We Protect Your Data</h2>
+        <div class="content">
+          <ul>
+            <li>🔐 Secure MongoDB database with encryption</li>
+            <li>🔒 No data sharing with third parties</li>
+            <li>🧹 Automatic cleanup when items reach zero quantity</li>
+            <li>🏠 Data stays within your Discord channels</li>
+            <li>👮 Only channel managers can clear tracker data</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>🗑️ Data Deletion</h2>
+        <div class="content">
+          <p>Want your data gone? Easy!</p>
+          <ul>
+            <li>Use <span class="highlight">/tracker clear</span> to remove all items from a channel</li>
+            <li>Remove the bot from your server to stop new data collection</li>
+            <li>Contact us on <a href="https://github.com/zuedev/Arcanum/issues" style="color: #ffff00;">GitHub</a> for complete data deletion</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>📞 Questions?</h2>
+        <div class="content">
+          <p>This bot is <span class="highlight">100% open source</span>! You can review the code yourself at <a href="https://github.com/zuedev/Arcanum" style="color: #ffff00;">GitHub</a>.</p>
+          <p>Have concerns? Create an issue on our GitHub repository and we'll address it!</p>
+        </div>
+      </div>
+
+      <div class="footer">
+        <p>Last updated: December 2024</p>
+        <p><em>"We're just here to help you roll dice and track loot!"</em></p>
+      </div>
+
+      <a href="../" class="back-button">🏠 Back to Main Site</a>
+    </div>
+  </body>
+</html>

@@ -3,63 +3,344 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Arcanum</title>
+    <title>~*~ Arcanum - The Ultimate Discord Bot for TTRPG Games ~*~</title>
     <meta
       name="description"
-      content="An open-source Discord bot for running TTRPG games."
+      content="Welcome to Arcanum! The most awesome Discord bot for running TTRPG games. Roll dice, track items, and have epic adventures!"
     />
     <meta
       name="keywords"
-      content="discord, bot, ttrpg, rpg, dnd, open-source"
+      content="discord, bot, ttrpg, rpg, dnd, dice roller, item tracker, open-source, tabletop, gaming"
     />
     <link rel="icon" href="icon.png" />
     <style>
-      html {
-        height: 100%;
-        background: black;
-        color: white;
-        font-family: "Times New Roman", Times, serif;
+      body {
+        margin: 0;
+        padding: 20px;
+        background: #000000;
+        background-image:
+          radial-gradient(circle at 25% 25%, #003300 0%, transparent 50%),
+          radial-gradient(circle at 75% 75%, #000033 0%, transparent 50%);
+        color: #00ff00;
+        font-family: "Courier New", "Times New Roman", monospace;
         text-align: center;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
+        min-height: 100vh;
+        overflow-x: hidden;
       }
 
-      img {
-        width: 100px;
-        height: 100px;
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        border: 3px solid #00ff00;
+        border-radius: 10px;
+        background: rgba(0, 0, 0, 0.8);
+        box-shadow: 0 0 20px #00ff00;
+        animation: glow 2s ease-in-out infinite alternate;
+      }
+
+      @keyframes glow {
+        from { box-shadow: 0 0 20px #00ff00; }
+        to { box-shadow: 0 0 30px #00ff00, 0 0 40px #00ff00; }
+      }
+
+      .header {
+        margin-bottom: 30px;
+      }
+
+      .avatar {
+        width: 120px;
+        height: 120px;
+        border: 3px solid #00ff00;
+        border-radius: 50%;
+        margin: 20px auto;
+        display: block;
+        animation: spin 10s linear infinite;
+      }
+
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
       }
 
       h1 {
+        font-size: 3em;
+        color: #00ff00;
+        text-shadow: 0 0 10px #00ff00;
+        margin: 20px 0;
+        animation: pulse 1.5s ease-in-out infinite alternate;
+      }
+
+      @keyframes pulse {
+        from { text-shadow: 0 0 10px #00ff00; }
+        to { text-shadow: 0 0 20px #00ff00, 0 0 30px #00ff00; }
+      }
+
+      .subtitle {
+        font-size: 1.3em;
+        color: #ffff00;
+        font-style: italic;
+        margin-bottom: 30px;
+        text-shadow: 0 0 5px #ffff00;
+      }
+
+      .features {
+        text-align: left;
+        margin: 30px 0;
+        padding: 20px;
+        border: 2px dashed #ffff00;
+        background: rgba(0, 20, 0, 0.5);
+      }
+
+      .features h2 {
+        text-align: center;
+        color: #ffff00;
         font-size: 2em;
-      }
-
-      p {
-        font-size: 1.5em;
-      }
-
-      a {
-        color: white;
-        text-decoration: underline dotted;
-        font-size: 1.5em;
-        margin: 10px;
-      }
-
-      a:hover {
         text-decoration: underline;
+        margin-bottom: 20px;
+      }
+
+      .features ul {
+        list-style: none;
+        padding: 0;
+      }
+
+      .features li {
+        margin: 15px 0;
+        padding: 10px;
+        background: rgba(0, 50, 0, 0.3);
+        border-left: 5px solid #00ff00;
+        font-size: 1.1em;
+      }
+
+      .features li::before {
+        content: "🎲 ";
+        margin-right: 10px;
+      }
+
+      .button-container {
+        margin: 40px 0;
+        display: flex;
+        justify-content: center;
+        gap: 30px;
+        flex-wrap: wrap;
+      }
+
+      .retro-button {
+        display: inline-block;
+        padding: 15px 30px;
+        background: linear-gradient(45deg, #003300, #006600);
+        color: #00ff00;
+        text-decoration: none;
+        font-size: 1.4em;
+        font-weight: bold;
+        border: 3px solid #00ff00;
+        border-radius: 5px;
+        text-shadow: 0 0 5px #00ff00;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+      }
+
+      .retro-button:hover {
+        background: linear-gradient(45deg, #006600, #009900);
+        box-shadow: 0 0 15px #00ff00;
+        transform: scale(1.05);
+        animation: flash 0.5s ease-in-out;
+      }
+
+      @keyframes flash {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.8; }
+      }
+
+      .stats {
+        margin: 40px 0;
+        padding: 20px;
+        background: rgba(0, 0, 50, 0.3);
+        border: 2px solid #0066ff;
+        border-radius: 10px;
+      }
+
+      .stats h3 {
+        color: #0066ff;
+        font-size: 1.8em;
+        margin-bottom: 15px;
+      }
+
+      .stat-item {
+        display: inline-block;
+        margin: 10px 20px;
+        font-size: 1.2em;
+        color: #66ccff;
+      }
+
+      .visitor-counter {
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        background: rgba(0, 0, 0, 0.8);
+        color: #ff0066;
+        padding: 10px;
+        border: 2px solid #ff0066;
+        border-radius: 5px;
+        font-size: 0.9em;
+        animation: blink 2s infinite;
+      }
+
+      @keyframes blink {
+        0%, 50% { opacity: 1; }
+        51%, 100% { opacity: 0.5; }
+      }
+
+      .footer {
+        margin-top: 50px;
+        padding: 20px;
+        border-top: 3px double #00ff00;
+        color: #888888;
+        font-size: 0.9em;
+      }
+
+      .footer a {
+        color: #00ff00;
+        text-decoration: none;
+      }
+
+      .footer a:hover {
+        text-decoration: underline;
+        color: #ffff00;
+      }
+
+      .marquee {
+        background: #000033;
+        color: #00ffff;
+        padding: 10px;
+        margin: 20px 0;
+        border: 2px solid #00ffff;
+        overflow: hidden;
+        white-space: nowrap;
+      }
+
+      .marquee-text {
+        display: inline-block;
+        animation: scroll-left 15s linear infinite;
+      }
+
+      @keyframes scroll-left {
+        0% { transform: translate3d(100%, 0, 0); }
+        100% { transform: translate3d(-100%, 0, 0); }
+      }
+
+      /* Responsive design but keep that 2000s charm */
+      @media (max-width: 768px) {
+        .container {
+          margin: 10px;
+          padding: 15px;
+        }
+
+        h1 {
+          font-size: 2.5em;
+        }
+
+        .button-container {
+          flex-direction: column;
+          align-items: center;
+        }
+
+        .visitor-counter {
+          position: relative;
+          margin: 20px auto;
+        }
       }
     </style>
   </head>
   <body>
-    <img src="icon.png" alt="Arcanum avatar" />
-    <h1>Arcanum</h1>
-    <p>An open-source Discord bot for running TTRPG games.</p>
-    <a
-      href="https://discord.com/oauth2/authorize?client_id=1274868942753628210"
-      target="_blank"
-      >Install</a
-    >
-    <a href="https://github.com/zuedev/Arcanum" target="_blank">GitHub</a>
+    <div class="container">
+      <div class="header">
+        <img src="icon.png" alt="Arcanum avatar" class="avatar" />
+        <h1>✨ ARCANUM ✨</h1>
+        <div class="subtitle">~*~ The Ultimate Discord Bot for Epic TTRPG Adventures ~*~</div>
+      </div>
+
+      <div class="marquee">
+        <div class="marquee-text">
+          🎲 Welcome to the most awesome Discord bot for tabletop gaming! 🎲 Roll dice, track items, and create legendary adventures! 🎲
+        </div>
+      </div>
+
+      <div class="features">
+        <h2>⚔️ EPIC FEATURES ⚔️</h2>
+        <ul>
+          <li><strong>Dice Rolling System:</strong> Roll any dice from d4 to d100! Support for multiple dice and custom sides!</li>
+          <li><strong>Item Tracker:</strong> Keep track of your party's loot, supplies, and magical items per channel!</li>
+          <li><strong>Smart Search:</strong> Find items with fuzzy matching - no need to remember exact names!</li>
+          <li><strong>Per-Channel Storage:</strong> Each channel has its own tracker - perfect for multiple campaigns!</li>
+          <li><strong>Bulk Operations:</strong> Add or remove multiple quantities at once!</li>
+          <li><strong>Export Data:</strong> Get your tracker data as JSON files for backup!</li>
+          <li><strong>Permission Controls:</strong> Channel managers can clear trackers when needed!</li>
+          <li><strong>Lightning Fast:</strong> Optimized for performance with chunked processing for large rolls!</li>
+        </ul>
+      </div>
+
+      <div class="stats">
+        <h3>📊 BOT STATISTICS 📊</h3>
+        <div class="stat-item">🎯 Max 100 Dice Per Roll</div>
+        <div class="stat-item">🎲 Supports d4, d6, d8, d10, d12, d20, d100</div>
+        <div class="stat-item">📦 Unlimited Item Tracking</div>
+        <div class="stat-item">🔍 Smart Fuzzy Search</div>
+        <div class="stat-item">⚡ Lightning Fast Response</div>
+        <div class="stat-item">🛡️ 100% Open Source</div>
+      </div>
+
+      <div class="button-container">
+        <a
+          href="https://discord.com/oauth2/authorize?client_id=1274868942753628210"
+          target="_blank"
+          class="retro-button"
+          >🚀 Add to Discord 🚀</a>
+        <a href="https://github.com/zuedev/Arcanum" target="_blank" class="retro-button">
+          🐙 View on GitHub 🐙</a>
+        <a href="privacy-policy/" class="retro-button">🔒 Privacy Policy</a>
+        <a href="terms-of-service/" class="retro-button">📋 Terms of Service</a>
+      </div>
+
+      <div class="marquee">
+        <div class="marquee-text">
+          💾 Made with love for the TTRPG community! 💾 Open source and always improving! 💾 Join thousands of adventurers! 💾
+        </div>
+      </div>
+
+      <div class="footer">
+        <p>Created with ❤️ for the tabletop gaming community</p>
+        <p>Built with Node.js • Discord.js • MongoDB</p>
+        <p><a href="https://github.com/zuedev/Arcanum/issues">Report Issues</a> |
+           <a href="https://github.com/zuedev/Arcanum/blob/master/README.md">Documentation</a></p>
+        <p><em>"Roll for initiative!"</em></p>
+      </div>
+    </div>
+
+    <div class="visitor-counter">
+      👁️ You are visitor #<span id="visitor-count">1337</span>
+    </div>
+
+    <script>
+      // Classic 2000s visitor counter simulation
+      document.addEventListener('DOMContentLoaded', function() {
+        const counter = document.getElementById('visitor-count');
+        const baseCount = 1337;
+        const randomAdd = Math.floor(Math.random() * 999) + 100;
+        counter.textContent = (baseCount + randomAdd).toLocaleString();
+
+        // Add some interactivity
+        let clickCount = 0;
+        document.body.addEventListener('click', function() {
+          clickCount++;
+          if (clickCount > 5) {
+            const colors = ['#ff0066', '#00ff00', '#ffff00', '#0066ff', '#ff6600'];
+            document.body.style.color = colors[Math.floor(Math.random() * colors.length)];
+          }
+        });
+      });
+    </script>
   </body>
 </html>
