@@ -1,6 +1,6 @@
 # Arcanum
 
-<img src="icon.png" height="100" alt="Arcanum Bot Avatar">
+<img src="icon-big.png" height="100" alt="Arcanum Bot Avatar">
 
 > A streamlined Discord bot for essential TTRPG functionality.
 
@@ -59,12 +59,14 @@ The easiest way to get started is by inviting our hosted bot to your server:
 ## Commands
 
 ### `/roll` - Dice Rolling System
+
 - `/roll d20` - Roll a d20 (with optional quantity)
 - `/roll d12`, `/roll d10`, `/roll d8`, `/roll d6`, `/roll d4` - Roll standard dice
 - `/roll d100` - Roll percentile dice
 - `/roll dx` - Roll custom dice with specified sides
 
 ### `/tracker` - Item Tracking System
+
 - `/tracker add` - Add items to the tracker with quantities
 - `/tracker remove` - Remove items from the tracker
 - `/tracker list` - Display all tracked items
@@ -72,6 +74,7 @@ The easiest way to get started is by inviting our hosted bot to your server:
 - `/tracker clear` - Clear all items (requires MANAGE_CHANNELS permission)
 
 ### `/ping` - Bot Status
+
 - Simple command to check if the bot is responsive
 
 ## Configuration
