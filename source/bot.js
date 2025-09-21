@@ -4,7 +4,12 @@ import {
   ActivityType,
   Routes,
   GatewayIntentBits,
+  SlashCommandBuilder,
+  PermissionFlagsBits,
 } from "discord.js";
+import { connect } from "./controllers/mongo.js";
+import calculateSimilarity from "./utilities/calculateSimilarity.js";
+import roll from "./library/roll.js";
 
 export default async () => {
   const client = new Client({
@@ -52,34 +57,581 @@ export default async () => {
     if (!interaction.isCommand()) return;
 
     try {
-      // defer reply to give the bot time to process
       await interaction.deferReply();
-
-      (
-        await import(
-          `./InteractionCreate.Commands/${interaction.commandName}.js`
-        )
-      ).default.execute({ interaction });
+      await executeCommand(interaction);
     } catch (error) {
       console.error(error);
-      interaction.followUp("I couldn't execute that command.");
+      await interaction.followUp("I couldn't execute that command.");
     }
   });
 
   await client.login(process.env.DISCORD_BOT_TOKEN);
 
-  async function registerCommands({ client }) {
-    const commands = [];
+  // ===== COMMAND DEFINITIONS =====
 
-    const commandFiles = ["ping.js", "tracker.js", "roll.js"];
+  const commands = [
+    // Ping command
+    new SlashCommandBuilder()
+      .setName("ping")
+      .setDescription("Replies with pong!"),
 
-    for (const file of commandFiles) {
-      const { data } = (await import(`./InteractionCreate.Commands/${file}`))
-        .default;
+    // Tracker command with all subcommands
+    new SlashCommandBuilder()
+      .setName("tracker")
+      .setDescription("Manage trackers for the current channel")
+      .addSubcommand((subcommand) =>
+        subcommand
+          .setName("add")
+          .setDescription("Add something to the tracker")
+          .addStringOption((option) =>
+            option
+              .setName("name")
+              .setDescription("The name of the thing to add")
+              .setRequired(true)
+          )
+          .addIntegerOption((option) =>
+            option
+              .setName("quantity")
+              .setDescription("The quantity to add")
+              .setRequired(true)
+          )
+      )
+      .addSubcommand((subcommand) =>
+        subcommand
+          .setName("remove")
+          .setDescription("Remove something from the tracker")
+          .addStringOption((option) =>
+            option
+              .setName("name")
+              .setDescription("The name of the thing to remove")
+              .setRequired(true)
+          )
+          .addIntegerOption((option) =>
+            option
+              .setName("quantity")
+              .setDescription("The quantity to remove")
+              .setRequired(true)
+          )
+      )
+      .addSubcommand((subcommand) =>
+        subcommand
+          .setName("list")
+          .setDescription("List all the things in the tracker")
+      )
+      .addSubcommand((subcommand) =>
+        subcommand
+          .setName("clear")
+          .setDescription("Clear all the things from the tracker")
+      )
+      .addSubcommand((subcommand) =>
+        subcommand
+          .setName("search")
+          .setDescription("Search for an item in the tracker")
+          .addStringOption((option) =>
+            option
+              .setName("name")
+              .setDescription("The name of the thing to search for")
+              .setRequired(true)
+          )
+      ),
 
-      commands.push(data);
+    // Roll command with all dice subcommands
+    new SlashCommandBuilder()
+      .setName("roll")
+      .setDescription("Roll some dice")
+      .addSubcommand((subcommand) =>
+        subcommand
+          .setName("d20")
+          .setDescription("Roll a d20")
+          .addIntegerOption((option) =>
+            option
+              .setName("quantity")
+              .setDescription("The quantity of dice to roll")
+          )
+      )
+      .addSubcommand((subcommand) =>
+        subcommand
+          .setName("d12")
+          .setDescription("Roll a d12")
+          .addIntegerOption((option) =>
+            option
+              .setName("quantity")
+              .setDescription("The quantity of dice to roll")
+          )
+      )
+      .addSubcommand((subcommand) =>
+        subcommand
+          .setName("d10")
+          .setDescription("Roll a d10")
+          .addIntegerOption((option) =>
+            option
+              .setName("quantity")
+              .setDescription("The quantity of dice to roll")
+          )
+      )
+      .addSubcommand((subcommand) =>
+        subcommand
+          .setName("d100")
+          .setDescription("Roll a pair of d10s for a d100")
+          .addIntegerOption((option) =>
+            option
+              .setName("quantity")
+              .setDescription("The quantity of dice to roll")
+          )
+      )
+      .addSubcommand((subcommand) =>
+        subcommand
+          .setName("d8")
+          .setDescription("Roll a d8")
+          .addIntegerOption((option) =>
+            option
+              .setName("quantity")
+              .setDescription("The quantity of dice to roll")
+          )
+      )
+      .addSubcommand((subcommand) =>
+        subcommand
+          .setName("d6")
+          .setDescription("Roll a d6")
+          .addIntegerOption((option) =>
+            option
+              .setName("quantity")
+              .setDescription("The quantity of dice to roll")
+          )
+      )
+      .addSubcommand((subcommand) =>
+        subcommand
+          .setName("d4")
+          .setDescription("Roll a d4")
+          .addIntegerOption((option) =>
+            option
+              .setName("quantity")
+              .setDescription("The quantity of dice to roll")
+          )
+      )
+      .addSubcommand((subcommand) =>
+        subcommand
+          .setName("dx")
+          .setDescription("Roll a custom die")
+          .addIntegerOption((option) =>
+            option
+              .setName("sides")
+              .setDescription("The number of sides on the die")
+              .setRequired(true)
+          )
+          .addIntegerOption((option) =>
+            option
+              .setName("quantity")
+              .setDescription("The quantity of dice to roll")
+          )
+      ),
+  ];
+
+  // ===== COMMAND EXECUTION =====
+
+  async function executeCommand(interaction) {
+    switch (interaction.commandName) {
+      case "ping":
+        await pingCommand(interaction);
+        break;
+      case "tracker":
+        await trackerCommand(interaction);
+        break;
+      case "roll":
+        await rollCommand(interaction);
+        break;
+      default:
+        await interaction.followUp("This command is not supported.");
+        break;
+    }
+  }
+
+  // ===== COMMAND HANDLERS =====
+
+  async function pingCommand(interaction) {
+    return await interaction.followUp("Pong!");
+  }
+
+  async function trackerCommand(interaction) {
+    const subcommand = interaction.options.getSubcommand();
+
+    switch (subcommand) {
+      case "add":
+        await trackerAdd(interaction);
+        break;
+      case "remove":
+        await trackerRemove(interaction);
+        break;
+      case "list":
+        await trackerList(interaction);
+        break;
+      case "clear":
+        await trackerClear(interaction);
+        break;
+      case "search":
+        await trackerSearch(interaction);
+        break;
+      default:
+        await interaction.followUp("This subcommand is not supported.");
+        break;
+    }
+  }
+
+  async function rollCommand(interaction) {
+    let quantity = 1;
+    let sides = 20;
+
+    const subcommand = interaction.options.getSubcommand();
+
+    if (subcommand === "dx") {
+      sides = interaction.options.getInteger("sides");
+      quantity = interaction.options.getInteger("quantity") ?? 1;
+    } else {
+      sides = parseInt(subcommand.substring(1));
+      quantity = interaction.options.getInteger("quantity") ?? 1;
     }
 
+    // Apply limits: max 100 dice, max 100 sides
+    if (quantity > 100) {
+      return interaction.editReply("❌ Maximum of 100 dice allowed per roll.");
+    }
+
+    if (sides > 100) {
+      return interaction.editReply("❌ Maximum of 100 sides allowed per die.");
+    }
+
+    // For large calculations, process in chunks to avoid timeout
+    const isLargeCalculation = quantity > 100 || (quantity * sides > 100000);
+
+    if (isLargeCalculation) {
+      // Process in chunks to avoid timeout
+      const chunkSize = Math.min(100, Math.max(1, Math.floor(10000 / sides)));
+      let results = [];
+      let total = 0;
+
+      for (let chunk = 0; chunk < quantity; chunk += chunkSize) {
+        const currentChunkSize = Math.min(chunkSize, quantity - chunk);
+        const chunkDice = `${currentChunkSize}d${sides}`;
+        const chunkResult = roll(chunkDice);
+
+        results = results.concat(chunkResult.results);
+        total += chunkResult.total;
+
+        // Yield control periodically to prevent blocking
+        if (chunk % (chunkSize * 10) === 0) {
+          await new Promise(resolve => setImmediate(resolve));
+        }
+      }
+
+      const reply = `**Rolling \`${quantity}d${sides}\`...**\n${`\`${results.join(
+        " + "
+      )} = ${total}\``}`;
+
+      if (reply.length > 2000) {
+        return interaction.editReply({
+          content:
+            "The result is too long to send as a message, here is a file instead.",
+          files: [
+            {
+              attachment: Buffer.from(reply),
+              name: "roll.md",
+            },
+          ],
+        });
+      }
+
+      return interaction.editReply(reply);
+    } else {
+      // For small calculations, use the original fast path
+      const { results, total } = roll(`${quantity}d${sides}`);
+
+      const reply = `**Rolling \`${quantity}d${sides}\`...**\n${`\`${results.join(
+        " + "
+      )} = ${total}\``}`;
+
+      if (reply.length > 2000) {
+        return interaction.editReply({
+          content:
+            "The result is too long to send as a message, here is a file instead.",
+          files: [
+            {
+              attachment: Buffer.from(reply),
+              name: "roll.md",
+            },
+          ],
+        });
+      }
+
+      return interaction.editReply(reply);
+    }
+  }
+
+  // ===== TRACKER SUBCOMMAND HANDLERS =====
+
+  async function trackerAdd(interaction) {
+    const name = interaction.options.getString("name").toLowerCase().trim();
+    const quantity = interaction.options.getInteger("quantity");
+
+    if (quantity < 1 || !Number.isInteger(quantity))
+      return await interaction.followUp(
+        "The quantity must be an integer greater than 0."
+      );
+
+    if (name.length > 100)
+      return await interaction.followUp(
+        "Item name must be 100 characters or less."
+      );
+
+    let mongo;
+    try {
+      mongo = await connect();
+      const collection = mongo.db().collection("trackers");
+
+      const data = await collection.findOneAndUpdate(
+        { channel: interaction.channel.id, name },
+        {
+          $inc: { quantity },
+          $setOnInsert: {
+            channel: interaction.channel.id,
+            name,
+            createdAt: new Date()
+          },
+          $set: { updatedAt: new Date() }
+        },
+        { upsert: true, returnDocument: "after" }
+      );
+
+      // if the new quantity is 0 or negative, remove the document
+      if (data.quantity <= 0) {
+        await collection.deleteOne({ channel: interaction.channel.id, name });
+        await interaction.followUp(
+          `Changed the quantity of **${name}** from \`${
+            data.quantity - quantity
+          }\` to \`0\`. Removed the item from the tracker.`
+        );
+      } else {
+        await interaction.followUp(
+          `Changed the quantity of **${name}** from \`${
+            data.quantity - quantity
+          }\` to \`${data.quantity}\`.`
+        );
+      }
+    } catch (error) {
+      console.error("Error in tracker add:", error);
+      await interaction.followUp("An error occurred while updating the tracker.");
+    } finally {
+      if (mongo) await mongo.close();
+    }
+  }
+
+  async function trackerRemove(interaction) {
+    const name = interaction.options.getString("name").toLowerCase().trim();
+    const quantity = interaction.options.getInteger("quantity");
+
+    if (quantity < 1 || !Number.isInteger(quantity))
+      return await interaction.followUp(
+        "The quantity must be an integer greater than 0."
+      );
+
+    let mongo;
+    try {
+      mongo = await connect();
+      const collection = mongo.db().collection("trackers");
+
+      // Check if item exists first
+      const existingItem = await collection.findOne({
+        channel: interaction.channel.id,
+        name
+      });
+
+      if (!existingItem) {
+        return await interaction.followUp(
+          `Item **${name}** not found in the tracker.`
+        );
+      }
+
+      const data = await collection.findOneAndUpdate(
+        { channel: interaction.channel.id, name },
+        {
+          $inc: { quantity: -quantity },
+          $set: { updatedAt: new Date() }
+        },
+        { returnDocument: "after" }
+      );
+
+      // if the new quantity is 0 or negative, remove the document
+      if (data.quantity <= 0) {
+        await collection.deleteOne({ channel: interaction.channel.id, name });
+        await interaction.followUp(
+          `Changed the quantity of **${name}** from \`${
+            data.quantity + quantity
+          }\` to \`0\`. Removed the item from the tracker.`
+        );
+      } else {
+        await interaction.followUp(
+          `Changed the quantity of **${name}** from \`${
+            data.quantity + quantity
+          }\` to \`${data.quantity}\`.`
+        );
+      }
+    } catch (error) {
+      console.error("Error in tracker remove:", error);
+      await interaction.followUp("An error occurred while updating the tracker.");
+    } finally {
+      if (mongo) await mongo.close();
+    }
+  }
+
+  async function trackerList(interaction) {
+    let mongo;
+    try {
+      mongo = await connect();
+      const collection = mongo.db().collection("trackers");
+
+      const data = await collection
+        .find({ channel: interaction.channel.id })
+        .sort({ name: 1 })
+        .toArray();
+
+      if (!data.length) {
+        return await interaction.followUp("The tracker is empty.");
+      }
+
+      const totalItems = data.reduce((sum, item) => sum + item.quantity, 0);
+      const header = `**Tracker Contents** (${data.length} items, ${totalItems} total):\n\n`;
+
+      const itemList = data
+        .map((item, index) => `${index + 1}. **${item.name}**: ${item.quantity}`)
+        .join("\n");
+
+      const message = header + itemList;
+
+      if (message.length > 1900) {
+        const dataJSON = {};
+        data.forEach((item) => {
+          dataJSON[item.name] = item.quantity;
+        });
+
+        return await interaction.followUp({
+          content: `**Tracker Contents** (${data.length} items, ${totalItems} total)\n\nThe tracker is too large to display in a message, so here is a JSON file instead.`,
+          files: [
+            {
+              attachment: Buffer.from(JSON.stringify(dataJSON, null, 2)),
+              name: `tracker-${interaction.channel.id}.json`,
+            },
+          ],
+        });
+      }
+
+      await interaction.followUp(message);
+    } catch (error) {
+      console.error("Error in tracker list:", error);
+      await interaction.followUp("An error occurred while retrieving the tracker.");
+    } finally {
+      if (mongo) await mongo.close();
+    }
+  }
+
+  async function trackerClear(interaction) {
+    // check if the user has the MANAGE_CHANNELS permission
+    if (
+      !interaction.channel
+        .permissionsFor(interaction.member)
+        .has(PermissionFlagsBits.ManageChannels)
+    )
+      return await interaction.followUp(
+        "You must have the `MANAGE_CHANNELS` permission to clear the tracker."
+      );
+
+    let mongo;
+    try {
+      mongo = await connect();
+      const collection = mongo.db().collection("trackers");
+
+      const result = await collection.deleteMany({
+        channel: interaction.channel.id
+      });
+
+      if (result.deletedCount === 0) {
+        await interaction.followUp("The tracker is already empty.");
+      } else {
+        await interaction.followUp(
+          `Cleared ${result.deletedCount} item${result.deletedCount === 1 ? '' : 's'} from the tracker.`
+        );
+      }
+    } catch (error) {
+      console.error("Error in tracker clear:", error);
+      await interaction.followUp("An error occurred while clearing the tracker.");
+    } finally {
+      if (mongo) await mongo.close();
+    }
+  }
+
+  async function trackerSearch(interaction) {
+    const searchTerm = interaction.options.getString("name").toLowerCase().trim();
+
+    if (searchTerm.length < 2) {
+      return await interaction.followUp(
+        "Search term must be at least 2 characters long."
+      );
+    }
+
+    let mongo;
+    try {
+      mongo = await connect();
+      const collection = mongo.db().collection("trackers");
+
+      // Use MongoDB text search if available, otherwise fallback to regex
+      const regexQuery = {
+        channel: interaction.channel.id,
+        name: { $regex: searchTerm, $options: "i" }
+      };
+
+      const data = await collection
+        .find(regexQuery)
+        .sort({ name: 1 })
+        .toArray();
+
+      // If no exact matches, use fuzzy matching
+      let results = data;
+      if (results.length === 0) {
+        const allItems = await collection
+          .find({ channel: interaction.channel.id })
+          .toArray();
+
+        if (!allItems.length) {
+          return await interaction.followUp("The tracker is empty.");
+        }
+
+        results = allItems
+          .filter(item => calculateSimilarity(searchTerm, item.name) > 0.5)
+          .sort((a, b) =>
+            calculateSimilarity(searchTerm, b.name) - calculateSimilarity(searchTerm, a.name)
+          );
+      }
+
+      if (!results.length) {
+        return await interaction.followUp(`No items found for: **${searchTerm}**`);
+      }
+
+      const message = results.length === 1
+        ? `Found 1 item:\n**${results[0].name}**: ${results[0].quantity}`
+        : `Found ${results.length} items:\n` + results
+            .map((item, index) => `${index + 1}. **${item.name}**: ${item.quantity}`)
+            .join("\n");
+
+      await interaction.followUp(message);
+    } catch (error) {
+      console.error("Error in tracker search:", error);
+      await interaction.followUp("An error occurred while searching the tracker.");
+    } finally {
+      if (mongo) await mongo.close();
+    }
+  }
+
+  // ===== COMMAND REGISTRATION =====
+
+  async function registerCommands({ client }) {
     await client.rest.put(Routes.applicationCommands(client.application.id), {
       body: commands,
     });
