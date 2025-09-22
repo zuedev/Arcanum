@@ -26,17 +26,27 @@ A Discord bot for tabletop gaming enthusiasts, featuring dice rolling and item t
 
 ### 🏦 Currency Bank
 
-- **Deposit currency**: `/bank deposit currency:gold amount:50` (supports platinum, gold, silver, electrum, copper)
-- **Withdraw currency**: `/bank withdraw currency:silver amount:10` (with balance validation)
-- **Check balance**: `/bank balance` (shows all currencies with gold value conversion)
-- **Convert currency**: `/bank convert from:gold to:silver amount:10` (with configurable fees)
-- **Set conversion fees**: `/bank setfee rate:0.05` (5% fee, requires MANAGE_CHANNELS)
-- **View fee settings**: `/bank fees` (current rates and examples)
-- **Clear bank**: `/bank clear` (requires MANAGE_CHANNELS permission)
-- **View audit log**: `/bank audit limit:30` (complete transaction history)
+#### D&D Currency System
+- **Deposit currency**: `/bank dnd deposit currency:gold amount:50` (supports platinum, gold, silver, electrum, copper)
+- **Withdraw currency**: `/bank dnd withdraw currency:silver amount:10` (with balance validation)
+- **Check balance**: `/bank dnd balance` (shows all currencies with gold value conversion)
+- **Convert currency**: `/bank dnd convert from:gold to:silver amount:10` (with configurable fees)
+- **Set conversion fees**: `/bank dnd setfee rate:0.05` (5% fee, requires MANAGE_CHANNELS)
+- **View fee settings**: `/bank dnd fees` (current rates and examples)
+- **Clear bank**: `/bank dnd clear` (requires MANAGE_CHANNELS permission)
+- **View audit log**: `/bank dnd audit limit:30` (complete transaction history)
+
+#### Decimal Currency System
+- **Deposit currency**: `/bank decimal deposit amount:50.25` (supports decimal amounts)
+- **Withdraw currency**: `/bank decimal withdraw amount:25.50` (with balance validation)
+- **Check balance**: `/bank decimal balance` (shows current decimal balance)
+- **Clear bank**: `/bank decimal clear` (requires MANAGE_CHANNELS permission)
+- **View audit log**: `/bank decimal audit limit:30` (complete transaction history)
+
+#### Features
 - Per-channel currency management with automatic cleanup
-- Configurable conversion fees (default 10%, 0-100% range)
-- D&D standard conversion rates with fee deduction
+- Multiple currency systems (D&D standard and decimal)
+- Configurable conversion fees for D&D system (default 10%, 0-100% range)
 - Built-in currency validation and abbreviation display
 - Complete audit trail of all transactions and fee changes
 
@@ -118,15 +128,25 @@ npm test
 
 ### Currency Bank
 
+#### D&D Currency System
 ```
-/bank deposit currency:gold amount:100
-/bank withdraw currency:silver amount:25
-/bank balance  # View all currency balances with gold conversion
-/bank convert from:gold to:silver amount:10  # Convert with fees
-/bank setfee rate:0.05  # Set 5% conversion fee (admin only)
-/bank fees     # View current fee settings and examples
-/bank clear    # Requires MANAGE_CHANNELS permission
-/bank audit limit:15  # View recent 15 transactions
+/bank dnd deposit currency:gold amount:100
+/bank dnd withdraw currency:silver amount:25
+/bank dnd balance  # View all currency balances with gold conversion
+/bank dnd convert from:gold to:silver amount:10  # Convert with fees
+/bank dnd setfee rate:0.05  # Set 5% conversion fee (admin only)
+/bank dnd fees     # View current fee settings and examples
+/bank dnd clear    # Requires MANAGE_CHANNELS permission
+/bank dnd audit limit:15  # View recent 15 transactions
+```
+
+#### Decimal Currency System
+```
+/bank decimal deposit amount:150.75
+/bank decimal withdraw amount:25.50
+/bank decimal balance  # View current decimal balance
+/bank decimal clear    # Requires MANAGE_CHANNELS permission
+/bank decimal audit limit:15  # View recent 15 transactions
 ```
 
 ## Technical Details
