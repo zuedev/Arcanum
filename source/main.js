@@ -54,25 +54,13 @@ async function startBot() {
       await interaction.deferReply();
       await executeCommand(interaction);
     } catch (error) {
-      console.error(
-        `Error executing command ${interaction.commandName}:`,
-        error
-      );
+      const { handleCommandError } = await import('./utils/errorHandlers.js');
 
-      const errorMessage =
-        error.message === "Database connection failed"
-          ? ERROR_MESSAGES.DATABASE_ERROR
-          : ERROR_MESSAGES.GENERIC_ERROR;
+      const customMessages = {
+        "Database connection failed": ERROR_MESSAGES.DATABASE_ERROR
+      };
 
-      try {
-        if (interaction.deferred) {
-          await interaction.editReply(errorMessage);
-        } else {
-          await interaction.reply({ content: errorMessage, ephemeral: true });
-        }
-      } catch (replyError) {
-        console.error("Failed to send error response:", replyError);
-      }
+      await handleCommandError(error, interaction, interaction.commandName, customMessages);
     }
   });
 

@@ -1,50 +1,8 @@
-import { MongoClient } from "mongodb";
-import { CONFIG, CURRENCY_TYPES, CURRENCY_ABBREVIATIONS, DEFAULT_CONVERSION_FEE } from './config.js';
+import { CURRENCY_TYPES, CURRENCY_ABBREVIATIONS, DEFAULT_CONVERSION_FEE } from './config.js';
+import { connectToDatabase, withDatabase } from '../../../database/operations.js';
 
-/**
- * Connects to MongoDB with optimized settings
- * @returns {Promise<MongoClient>} Connected MongoDB client
- * @throws {Error} If connection fails
- */
-export async function connectToDatabase() {
-  try {
-    const client = new MongoClient(process.env.MONGODB_URI, {
-      retryWrites: true,
-      writeConcern: "majority",
-      maxPoolSize: 10,
-      minPoolSize: 2,
-      maxIdleTimeMS: 30000,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-    });
-
-    await client.connect();
-    return client;
-  } catch (error) {
-    console.error("Failed to connect to MongoDB:", error);
-    throw new Error("Database connection failed");
-  }
-}
-
-/**
- * Safely executes database operations with proper connection management
- * @param {Function} operation - Async function that performs database operations
- * @returns {Promise<any>} Result of the database operation
- */
-export async function withDatabase(operation) {
-  let client = null;
-  try {
-    client = await connectToDatabase();
-    return await operation(client);
-  } catch (error) {
-    console.error("Database operation failed:", error);
-    throw error;
-  } finally {
-    if (client) {
-      await client.close();
-    }
-  }
-}
+// Re-export database operations for backward compatibility
+export { connectToDatabase, withDatabase };
 
 /**
  * Validates currency input
@@ -95,7 +53,7 @@ export function validateNumber(value, min = 1, max = Number.MAX_SAFE_INTEGER) {
 }
 
 /**
- * Records an audit log entry for bank changes
+ * Records an audit log entry for bank changes (legacy wrapper)
  * @param {MongoClient} client - MongoDB client
  * @param {string} channel - Channel ID
  * @param {string} action - Action performed
@@ -104,25 +62,14 @@ export function validateNumber(value, min = 1, max = Number.MAX_SAFE_INTEGER) {
  * @param {Object} details - Additional details about the action
  */
 export async function recordBankAuditLog(client, channel, action, userId, username, details = {}) {
-  try {
-    const auditCollection = client
-      .db()
-      .collection(CONFIG.COLLECTION_NAMES.BANK_AUDIT_LOG);
+  const { recordAuditLog } = await import('../../../database/operations.js');
+  const { CONFIG } = await import('./config.js');
 
-    const logEntry = {
-      channel,
-      action,
-      userId,
-      username,
-      currencySystem: "dnd",
-      timestamp: new Date(),
-      details,
-    };
-
-    await auditCollection.insertOne(logEntry);
-  } catch (error) {
-    console.error("Failed to record bank audit log:", error);
-  }
+  return recordAuditLog(
+    { channel, action, userId, username, currencySystem: "dnd", details },
+    client,
+    CONFIG.COLLECTION_NAMES.BANK_AUDIT_LOG
+  );
 }
 
 /**
