@@ -25,7 +25,7 @@ const CONFIG = {
     TRACKER_AUDIT_LOG: "tracker_audit_log",
     BANK: "bank",
     BANK_AUDIT_LOG: "bank_audit_log",
-    BANK_FEES: "bank_fees",
+    BANK_SETTINGS: "bank_settings",
   },
 };
 
@@ -636,6 +636,87 @@ function createCommands() {
             .setName("fees")
             .setDescription("View current D&D conversion fee settings")
         )
+    )
+    .addSubcommandGroup((group) =>
+      group
+        .setName("decimal")
+        .setDescription("Decimal currency management (USD, EUR, etc.)")
+        .addSubcommand((sub) =>
+          sub
+            .setName("deposit")
+            .setDescription("Deposit decimal currency into the bank")
+            .addNumberOption((opt) =>
+              opt
+                .setName("amount")
+                .setDescription("The amount to deposit (decimal)")
+                .setRequired(true)
+                .setMinValue(0.01)
+            )
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("withdraw")
+            .setDescription("Withdraw decimal currency from the bank")
+            .addNumberOption((opt) =>
+              opt
+                .setName("amount")
+                .setDescription("The amount to withdraw (decimal)")
+                .setRequired(true)
+                .setMinValue(0.01)
+            )
+        )
+        .addSubcommand((sub) =>
+          sub.setName("balance").setDescription("View the current decimal bank balance")
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("clear")
+            .setDescription("Clear all decimal currency from the bank")
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("audit")
+            .setDescription("View the audit log of decimal bank transactions")
+            .addIntegerOption((opt) =>
+              opt
+                .setName("limit")
+                .setDescription("Number of recent entries to show (default: 20, max: 100)")
+                .setMinValue(1)
+                .setMaxValue(100)
+            )
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("setformat")
+            .setDescription("Set currency format (requires MANAGE_CHANNELS)")
+            .addStringOption((opt) =>
+              opt
+                .setName("prefix")
+                .setDescription("Currency prefix (e.g., '$', '€', '£')")
+                .setMaxLength(5)
+            )
+            .addStringOption((opt) =>
+              opt
+                .setName("suffix")
+                .setDescription("Currency suffix (e.g., 'USD', 'EUR')")
+                .setMaxLength(10)
+            )
+            .addBooleanOption((opt) =>
+              opt
+                .setName("prefix_space_after")
+                .setDescription("Add space after prefix (e.g., '$ 123.45' vs '$123.45')")
+            )
+            .addBooleanOption((opt) =>
+              opt
+                .setName("suffix_space_before")
+                .setDescription("Add space before suffix (e.g., '123.45 USD' vs '123.45USD')")
+            )
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("format")
+            .setDescription("View current decimal currency format settings")
+        )
     );
 
   commands.push(rollCommand);
@@ -1146,8 +1227,26 @@ async function handleBankCommand(interaction) {
     }
 
     await handler(interaction);
+  } else if (subcommandGroup === "decimal") {
+    const subcommandHandlers = {
+      deposit: handleDecimalBankDeposit,
+      withdraw: handleDecimalBankWithdraw,
+      balance: handleDecimalBankBalance,
+      clear: handleDecimalBankClear,
+      audit: handleDecimalBankAudit,
+      setformat: handleDecimalBankSetFormat,
+      format: handleDecimalBankFormat,
+    };
+
+    const handler = subcommandHandlers[subcommand];
+    if (!handler) {
+      await interaction.editReply("This decimal bank subcommand is not supported.");
+      return;
+    }
+
+    await handler(interaction);
   } else {
-    await interaction.editReply("Please specify a currency system (e.g., /bank dnd).");
+    await interaction.editReply("Please specify a currency system (e.g., /bank dnd or /bank decimal).");
   }
 }
 
@@ -2222,17 +2321,9 @@ async function handleBankConvert(interaction) {
 
     await withDatabase(async (client) => {
       const bankCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK);
-      const feeCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_FEES);
-
-      // First, update any existing fee documents that don't have currencySystem field
-      await feeCollection.updateMany(
-        { channel: interaction.channel.id, currencySystem: { $exists: false } },
-        { $set: { currencySystem: "dnd" } }
-      );
 
       // Get fee rate for this channel first
-      const feeConfig = await feeCollection.findOne({ channel: interaction.channel.id, currencySystem: "dnd" });
-      const feeRate = feeConfig?.feeRate || DEFAULT_CONVERSION_FEE;
+      const feeRate = await getBankFeeRate(client, interaction.channel.id);
 
       // Calculate fee from source currency first
       const feeAmount = Math.ceil(amount * feeRate);
@@ -2375,21 +2466,19 @@ async function handleBankSetFee(interaction) {
     const feeRate = validateFeeRate(interaction.options.getNumber("rate"));
 
     await withDatabase(async (client) => {
-      const feeCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_FEES);
+      const settingsCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_SETTINGS);
 
-      // First, update any existing fee documents that don't have currencySystem field
-      await feeCollection.updateMany(
-        { channel: interaction.channel.id, currencySystem: { $exists: false } },
-        { $set: { currencySystem: "dnd" } }
-      );
+      // First, migrate any existing settings from old collections
+      await migrateBankSettings(client, interaction.channel.id);
 
-      await feeCollection.findOneAndUpdate(
-        { channel: interaction.channel.id, currencySystem: "dnd" },
+      await settingsCollection.findOneAndUpdate(
+        { channel: interaction.channel.id },
         {
           $set: {
-            feeRate,
+            "dnd.feeRate": feeRate,
+            "dnd.updatedAt": new Date(),
+            "dnd.updatedBy": interaction.user.id,
             updatedAt: new Date(),
-            updatedBy: interaction.user.id,
           },
           $setOnInsert: {
             channel: interaction.channel.id,
@@ -2436,20 +2525,17 @@ async function handleBankSetFee(interaction) {
 async function handleBankFees(interaction) {
   try {
     await withDatabase(async (client) => {
-      const feeCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_FEES);
+      const settingsCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_SETTINGS);
 
-      // First, update any existing fee documents that don't have currencySystem field
-      await feeCollection.updateMany(
-        { channel: interaction.channel.id, currencySystem: { $exists: false } },
-        { $set: { currencySystem: "dnd" } }
-      );
+      // First, migrate any existing settings from old collections
+      await migrateBankSettings(client, interaction.channel.id);
 
-      const feeConfig = await feeCollection.findOne({ channel: interaction.channel.id, currencySystem: "dnd" });
-      const feeRate = feeConfig?.feeRate || DEFAULT_CONVERSION_FEE;
+      const settings = await settingsCollection.findOne({ channel: interaction.channel.id });
+      const feeRate = settings?.dnd?.feeRate || DEFAULT_CONVERSION_FEE;
       const feePercentage = (feeRate * 100).toFixed(1);
 
-      const isDefault = !feeConfig;
-      const lastUpdated = feeConfig?.updatedAt?.toLocaleString() || "Never";
+      const isDefault = !settings?.dnd?.feeRate;
+      const lastUpdated = settings?.dnd?.updatedAt?.toLocaleString() || "Never";
 
       let message = `**Bank Conversion Fees:**\n\n`;
       message += `**Current Fee Rate:** ${feePercentage}%`;
@@ -2470,6 +2556,600 @@ async function handleBankFees(interaction) {
   } catch (error) {
     console.error("Error in bank fees:", error);
     await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+  }
+}
+
+// ===== BANK SETTINGS MIGRATION =====
+
+/**
+ * Migrates bank settings from old collections to the new consolidated bank_settings collection
+ * @param {MongoClient} client - MongoDB client
+ * @param {string} channel - Channel ID
+ */
+async function migrateBankSettings(client, channel) {
+  const settingsCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_SETTINGS);
+
+  // Check if settings already exist for this channel
+  const existingSettings = await settingsCollection.findOne({ channel });
+  if (existingSettings) {
+    return; // Already migrated or settings exist
+  }
+
+  // Migrate from old bank_fees collection
+  try {
+    const bankFeesCollection = client.db().collection("bank_fees");
+    const oldFeeConfig = await bankFeesCollection.findOne({ channel, currencySystem: "dnd" });
+
+    // Migrate from old bank_decimal_currency_config collection
+    const decimalConfigCollection = client.db().collection("bank_decimal_currency_config");
+    const oldDecimalConfig = await decimalConfigCollection.findOne({ channel, currencySystem: "decimal" });
+
+    const newSettings = {
+      channel,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    // Add DND settings if they exist
+    if (oldFeeConfig) {
+      newSettings.currencySystem = "dnd";
+      newSettings.dnd = {
+        feeRate: oldFeeConfig.feeRate,
+        updatedAt: oldFeeConfig.updatedAt,
+        updatedBy: oldFeeConfig.updatedBy,
+      };
+    }
+
+    // Add decimal settings if they exist
+    if (oldDecimalConfig) {
+      if (!newSettings.currencySystem) {
+        newSettings.currencySystem = "decimal";
+      }
+      newSettings.decimal = {
+        prefix: oldDecimalConfig.prefix,
+        suffix: oldDecimalConfig.suffix,
+        prefixSpaceAfter: oldDecimalConfig.prefixSpaceAfter,
+        suffixSpaceBefore: oldDecimalConfig.suffixSpaceBefore,
+        updatedAt: oldDecimalConfig.updatedAt,
+        updatedBy: oldDecimalConfig.updatedBy,
+      };
+    }
+
+    // Only create settings document if we have something to migrate
+    if (oldFeeConfig || oldDecimalConfig) {
+      await settingsCollection.insertOne(newSettings);
+    }
+  } catch (error) {
+    // Migration failed, but continue - settings will use defaults
+    console.warn(`Failed to migrate bank settings for channel ${channel}:`, error);
+  }
+}
+
+/**
+ * Gets bank fee rate for DND currency conversions
+ * @param {MongoClient} client - MongoDB client
+ * @param {string} channel - Channel ID
+ * @returns {Promise<number>} Fee rate (0-1)
+ */
+async function getBankFeeRate(client, channel) {
+  const settingsCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_SETTINGS);
+
+  // First, migrate any existing settings from old collections
+  await migrateBankSettings(client, channel);
+
+  const settings = await settingsCollection.findOne({ channel, currencySystem: "dnd" });
+  return settings?.dnd?.feeRate || DEFAULT_CONVERSION_FEE;
+}
+
+// ===== DECIMAL BANK SUBCOMMAND HANDLERS =====
+
+/**
+ * Gets or creates decimal currency format configuration
+ * @param {MongoClient} client - MongoDB client
+ * @param {string} channel - Channel ID
+ * @returns {Promise<{prefix: string, suffix: string, prefixSpaceAfter: boolean, suffixSpaceBefore: boolean}>} Currency format configuration
+ */
+async function getDecimalCurrencyFormat(client, channel) {
+  const settingsCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_SETTINGS);
+
+  // First, migrate any existing config documents from old collections
+  await migrateBankSettings(client, channel);
+
+  const settings = await settingsCollection.findOne({ channel, currencySystem: "decimal" });
+  return {
+    prefix: settings?.decimal?.prefix || "$",
+    suffix: settings?.decimal?.suffix || "",
+    prefixSpaceAfter: settings?.decimal?.prefixSpaceAfter || false,
+    suffixSpaceBefore: settings?.decimal?.suffixSpaceBefore !== undefined ? settings.decimal.suffixSpaceBefore : true
+  };
+}
+
+/**
+ * Formats decimal currency amount with prefix/suffix and spacing
+ * @param {number} amount - The amount to format
+ * @param {string} prefix - Currency prefix
+ * @param {string} suffix - Currency suffix
+ * @param {boolean} prefixSpaceAfter - Add space after prefix
+ * @param {boolean} suffixSpaceBefore - Add space before suffix
+ * @returns {string} Formatted currency string
+ */
+function formatDecimalCurrency(amount, prefix = "$", suffix = "", prefixSpaceAfter = false, suffixSpaceBefore = true) {
+  const formattedAmount = amount.toFixed(2);
+  const prefixPart = prefix + (prefixSpaceAfter && prefix ? " " : "");
+  const suffixPart = (suffixSpaceBefore && suffix ? " " : "") + suffix;
+  return `${prefixPart}${formattedAmount}${suffixPart}`;
+}
+
+/**
+ * Handles decimal bank deposit subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleDecimalBankDeposit(interaction) {
+  try {
+    const amount = parseFloat(interaction.options.getNumber("amount"));
+
+    if (amount <= 0) {
+      await interaction.editReply("Amount must be greater than 0.");
+      return;
+    }
+
+    await withDatabase(async (client) => {
+      const collection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK);
+      const format = await getDecimalCurrencyFormat(client, interaction.channel.id);
+
+      const updateResult = await collection.findOneAndUpdate(
+        { channel: interaction.channel.id, currency: "decimal", currencySystem: "decimal" },
+        {
+          $inc: { amount },
+          $setOnInsert: {
+            channel: interaction.channel.id,
+            currency: "decimal",
+            currencySystem: "decimal",
+            createdAt: new Date(),
+          },
+          $set: { updatedAt: new Date() },
+        },
+        { upsert: true, returnDocument: "after" }
+      );
+
+      const oldAmount = updateResult.amount - amount;
+
+      // Record audit log
+      await recordDecimalBankAuditLog(
+        client,
+        interaction.channel.id,
+        "deposit",
+        interaction.user.id,
+        interaction.user.username,
+        {
+          amount,
+          oldAmount,
+          newAmount: updateResult.amount,
+        }
+      );
+
+      await interaction.editReply(
+        `Deposited ${formatDecimalCurrency(amount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)}. Balance: ${formatDecimalCurrency(oldAmount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)} → ${formatDecimalCurrency(updateResult.amount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)}.`
+      );
+    });
+  } catch (error) {
+    console.error("Error in decimal bank deposit:", error);
+    await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+  }
+}
+
+/**
+ * Handles decimal bank withdraw subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleDecimalBankWithdraw(interaction) {
+  try {
+    const amount = parseFloat(interaction.options.getNumber("amount"));
+
+    if (amount <= 0) {
+      await interaction.editReply("Amount must be greater than 0.");
+      return;
+    }
+
+    await withDatabase(async (client) => {
+      const collection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK);
+      const format = await getDecimalCurrencyFormat(client, interaction.channel.id);
+
+      // Check if account exists and has sufficient balance
+      const existingEntry = await collection.findOne({
+        channel: interaction.channel.id,
+        currency: "decimal",
+        currencySystem: "decimal",
+      });
+
+      if (!existingEntry || existingEntry.amount < amount) {
+        const currentAmount = existingEntry?.amount || 0;
+        await interaction.editReply(
+          `Insufficient balance. Available: ${formatDecimalCurrency(currentAmount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)}, requested: ${formatDecimalCurrency(amount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)}.`
+        );
+        return;
+      }
+
+      const updateResult = await collection.findOneAndUpdate(
+        { channel: interaction.channel.id, currency: "decimal", currencySystem: "decimal" },
+        {
+          $inc: { amount: -amount },
+          $set: { updatedAt: new Date() },
+        },
+        { returnDocument: "after" }
+      );
+
+      const oldAmount = updateResult.amount + amount;
+
+      // Record audit log
+      await recordDecimalBankAuditLog(
+        client,
+        interaction.channel.id,
+        updateResult.amount <= 0 ? "withdraw_all" : "withdraw",
+        interaction.user.id,
+        interaction.user.username,
+        {
+          amount,
+          oldAmount,
+          newAmount: updateResult.amount,
+        }
+      );
+
+      if (updateResult.amount <= 0) {
+        await collection.deleteOne({ channel: interaction.channel.id, currency: "decimal", currencySystem: "decimal" });
+        await interaction.editReply(
+          `Withdrew ${formatDecimalCurrency(amount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)}. Balance: ${formatDecimalCurrency(oldAmount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)} → ${formatDecimalCurrency(0, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)}. Account cleared.`
+        );
+      } else {
+        await interaction.editReply(
+          `Withdrew ${formatDecimalCurrency(amount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)}. Balance: ${formatDecimalCurrency(oldAmount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)} → ${formatDecimalCurrency(updateResult.amount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)}.`
+        );
+      }
+    });
+  } catch (error) {
+    console.error("Error in decimal bank withdraw:", error);
+    await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+  }
+}
+
+/**
+ * Handles decimal bank balance subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleDecimalBankBalance(interaction) {
+  try {
+    await withDatabase(async (client) => {
+      const collection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK);
+      const format = await getDecimalCurrencyFormat(client, interaction.channel.id);
+
+      // First, update any existing documents that don't have currencySystem field
+      await collection.updateMany(
+        { channel: interaction.channel.id, currency: "decimal", currencySystem: { $exists: false } },
+        { $set: { currencySystem: "decimal" } }
+      );
+
+      const account = await collection.findOne({
+        channel: interaction.channel.id,
+        currency: "decimal",
+        currencySystem: "decimal"
+      });
+
+      if (!account) {
+        await interaction.editReply(`**Decimal Bank Balance:** ${formatDecimalCurrency(0, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)}`);
+        return;
+      }
+
+      await interaction.editReply(
+        `**Decimal Bank Balance:** ${formatDecimalCurrency(account.amount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)}`
+      );
+    });
+  } catch (error) {
+    console.error("Error in decimal bank balance:", error);
+    await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+  }
+}
+
+/**
+ * Handles decimal bank clear subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleDecimalBankClear(interaction) {
+  try {
+    // Check permissions
+    if (
+      !interaction.channel
+        .permissionsFor(interaction.member)
+        ?.has(PermissionFlagsBits.ManageChannels)
+    ) {
+      await interaction.editReply(ERROR_MESSAGES.NO_PERMISSION);
+      return;
+    }
+
+    await withDatabase(async (client) => {
+      const collection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK);
+      const format = await getDecimalCurrencyFormat(client, interaction.channel.id);
+
+      // First, update any existing documents that don't have currencySystem field
+      await collection.updateMany(
+        { channel: interaction.channel.id, currency: "decimal", currencySystem: { $exists: false } },
+        { $set: { currencySystem: "decimal" } }
+      );
+
+      // Get account before deletion for audit log
+      const accountBeforeDeletion = await collection.findOne({
+        channel: interaction.channel.id,
+        currency: "decimal",
+        currencySystem: "decimal"
+      });
+
+      const result = await collection.deleteMany({
+        channel: interaction.channel.id,
+        currency: "decimal",
+        currencySystem: "decimal",
+      });
+
+      if (result.deletedCount === 0) {
+        await interaction.editReply("The decimal bank is already empty.");
+      } else {
+        // Record audit log
+        await recordDecimalBankAuditLog(
+          client,
+          interaction.channel.id,
+          "clear",
+          interaction.user.id,
+          interaction.user.username,
+          {
+            clearedAmount: accountBeforeDeletion?.amount || 0,
+          }
+        );
+
+        await interaction.editReply(
+          `Cleared decimal bank account. Previous balance: ${formatDecimalCurrency(accountBeforeDeletion?.amount || 0, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)}`
+        );
+      }
+    });
+  } catch (error) {
+    console.error("Error in decimal bank clear:", error);
+    await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+  }
+}
+
+/**
+ * Handles decimal bank audit subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleDecimalBankAudit(interaction) {
+  try {
+    const limit = interaction.options.getInteger("limit") || 20;
+
+    await withDatabase(async (client) => {
+      const auditCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_AUDIT_LOG);
+
+      // First, update any existing audit documents that don't have currencySystem field
+      await auditCollection.updateMany(
+        { channel: interaction.channel.id, currencySystem: { $exists: false } },
+        { $set: { currencySystem: "decimal" } }
+      );
+
+      const auditEntries = await auditCollection
+        .find({ channel: interaction.channel.id, currencySystem: "decimal" })
+        .sort({ timestamp: -1 })
+        .limit(limit)
+        .toArray();
+
+      if (!auditEntries.length) {
+        await interaction.editReply("No decimal bank audit log entries found for this channel.");
+        return;
+      }
+
+      let message = `**Decimal Bank Audit Log** (${auditEntries.length} recent entries):\n\n`;
+
+      for (const entry of auditEntries.reverse()) {
+        const timestamp = entry.timestamp.toLocaleString();
+        const actionText = await formatDecimalBankAuditAction(client, interaction.channel.id, entry.action, entry.details);
+        message += `**${timestamp}** - <@${entry.userId}> ${actionText}\n`;
+      }
+
+      if (message.length > CONFIG.TRACKER_MESSAGE_LIMIT) {
+        // Create detailed JSON file for large audit logs
+        const auditData = auditEntries.map(entry => ({
+          timestamp: entry.timestamp.toISOString(),
+          user: entry.username,
+          action: entry.action,
+          details: entry.details
+        }));
+
+        await interaction.editReply({
+          content: `**Decimal Bank Audit Log** (${auditEntries.length} recent entries)\n\nThe audit log is too large to display, here is a JSON file instead.`,
+          files: [
+            {
+              attachment: Buffer.from(JSON.stringify(auditData, null, 2), "utf8"),
+              name: `decimal-bank-audit-${interaction.channel.id}.json`,
+            },
+          ],
+        });
+      } else {
+        await interaction.editReply(message);
+      }
+    });
+  } catch (error) {
+    console.error("Error in decimal bank audit:", error);
+    await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+  }
+}
+
+/**
+ * Handles decimal bank setformat subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleDecimalBankSetFormat(interaction) {
+  try {
+    // Check permissions
+    if (
+      !interaction.channel
+        .permissionsFor(interaction.member)
+        ?.has(PermissionFlagsBits.ManageChannels)
+    ) {
+      await interaction.editReply(ERROR_MESSAGES.NO_PERMISSION);
+      return;
+    }
+
+    const prefix = interaction.options.getString("prefix");
+    const suffix = interaction.options.getString("suffix");
+    const prefixSpaceAfter = interaction.options.getBoolean("prefix_space_after");
+    const suffixSpaceBefore = interaction.options.getBoolean("suffix_space_before");
+
+    if (prefix === null && suffix === null && prefixSpaceAfter === null && suffixSpaceBefore === null) {
+      await interaction.editReply("You must specify at least one formatting option.");
+      return;
+    }
+
+    await withDatabase(async (client) => {
+      const settingsCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_SETTINGS);
+
+      // First, migrate any existing settings from old collections
+      await migrateBankSettings(client, interaction.channel.id);
+
+      // Get current settings or use defaults
+      const currentSettings = await settingsCollection.findOne({
+        channel: interaction.channel.id
+      });
+
+      const currentDecimal = currentSettings?.decimal || {};
+
+      const updateFields = {
+        "decimal.prefix": prefix !== null ? prefix : (currentDecimal.prefix || "$"),
+        "decimal.suffix": suffix !== null ? suffix : (currentDecimal.suffix || ""),
+        "decimal.prefixSpaceAfter": prefixSpaceAfter !== null ? prefixSpaceAfter : (currentDecimal.prefixSpaceAfter || false),
+        "decimal.suffixSpaceBefore": suffixSpaceBefore !== null ? suffixSpaceBefore : (currentDecimal.suffixSpaceBefore !== undefined ? currentDecimal.suffixSpaceBefore : true),
+        "decimal.updatedAt": new Date(),
+        "decimal.updatedBy": interaction.user.id,
+        updatedAt: new Date(),
+      };
+
+      await settingsCollection.findOneAndUpdate(
+        { channel: interaction.channel.id },
+        {
+          $set: updateFields,
+          $setOnInsert: {
+            channel: interaction.channel.id,
+            currencySystem: "decimal",
+            createdAt: new Date(),
+          },
+        },
+        { upsert: true }
+      );
+
+      // Record audit log
+      await recordDecimalBankAuditLog(
+        client,
+        interaction.channel.id,
+        "setformat",
+        interaction.user.id,
+        interaction.user.username,
+        {
+          newPrefix: prefix,
+          newSuffix: suffix,
+          newPrefixSpaceAfter: prefixSpaceAfter,
+          newSuffixSpaceBefore: suffixSpaceBefore,
+        }
+      );
+
+      const format = await getDecimalCurrencyFormat(client, interaction.channel.id);
+      const example = formatDecimalCurrency(123.45, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore);
+      await interaction.editReply(
+        `Updated decimal currency format. Example: ${example}`
+      );
+    });
+  } catch (error) {
+    console.error("Error in decimal bank setformat:", error);
+    await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+  }
+}
+
+/**
+ * Handles decimal bank format subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleDecimalBankFormat(interaction) {
+  try {
+    await withDatabase(async (client) => {
+      const format = await getDecimalCurrencyFormat(client, interaction.channel.id);
+      const example = formatDecimalCurrency(123.45, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore);
+
+      let message = `**Decimal Currency Format:**\n\n`;
+      message += `**Prefix:** \`${format.prefix}\`\n`;
+      message += `**Suffix:** \`${format.suffix}\`\n`;
+      message += `**Prefix Space After:** ${format.prefixSpaceAfter ? '✅' : '❌'}\n`;
+      message += `**Suffix Space Before:** ${format.suffixSpaceBefore ? '✅' : '❌'}\n`;
+      message += `**Example:** ${example}`;
+
+      await interaction.editReply(message);
+    });
+  } catch (error) {
+    console.error("Error in decimal bank format:", error);
+    await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+  }
+}
+
+/**
+ * Records an audit log entry for decimal bank changes
+ * @param {MongoClient} client - MongoDB client
+ * @param {string} channel - Channel ID
+ * @param {string} action - Action performed (deposit, withdraw, clear, etc.)
+ * @param {string} userId - User ID who performed the action
+ * @param {string} username - Username who performed the action
+ * @param {Object} details - Additional details about the action
+ */
+async function recordDecimalBankAuditLog(client, channel, action, userId, username, details = {}) {
+  try {
+    const auditCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_AUDIT_LOG);
+
+    const logEntry = {
+      channel,
+      action,
+      userId,
+      username,
+      currencySystem: "decimal",
+      timestamp: new Date(),
+      details,
+    };
+
+    await auditCollection.insertOne(logEntry);
+  } catch (error) {
+    console.error("Failed to record decimal bank audit log:", error);
+  }
+}
+
+/**
+ * Formats a decimal bank audit action into human-readable text
+ * @param {MongoClient} client - MongoDB client
+ * @param {string} channel - Channel ID
+ * @param {string} action - The action type
+ * @param {Object} details - Action details
+ * @returns {Promise<string>} Formatted action text
+ */
+async function formatDecimalBankAuditAction(client, channel, action, details) {
+  const format = await getDecimalCurrencyFormat(client, channel);
+
+  switch (action) {
+    case "deposit":
+      return `deposited ${formatDecimalCurrency(details.amount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)} (${formatDecimalCurrency(details.oldAmount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)} → ${formatDecimalCurrency(details.newAmount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)})`;
+    case "withdraw":
+      return `withdrew ${formatDecimalCurrency(details.amount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)} (${formatDecimalCurrency(details.oldAmount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)} → ${formatDecimalCurrency(details.newAmount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)})`;
+    case "withdraw_all":
+      return `withdrew all funds (${formatDecimalCurrency(details.oldAmount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)} → ${formatDecimalCurrency(0, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)})`;
+    case "clear":
+      return `cleared account (${formatDecimalCurrency(details.clearedAmount, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)} → ${formatDecimalCurrency(0, format.prefix, format.suffix, format.prefixSpaceAfter, format.suffixSpaceBefore)})`;
+    case "setformat":
+      const formatParts = [];
+      if (details.newPrefix !== undefined) formatParts.push(`prefix: '${details.newPrefix || ''}'`);
+      if (details.newSuffix !== undefined) formatParts.push(`suffix: '${details.newSuffix || ''}'`);
+      if (details.newPrefixSpaceAfter !== undefined) formatParts.push(`prefix space: ${details.newPrefixSpaceAfter ? 'on' : 'off'}`);
+      if (details.newSuffixSpaceBefore !== undefined) formatParts.push(`suffix space: ${details.newSuffixSpaceBefore ? 'on' : 'off'}`);
+      return `set currency format (${formatParts.join(', ')})`;
+    default:
+      return `performed action: ${action}`;
   }
 }
 
