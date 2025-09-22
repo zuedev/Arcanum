@@ -1849,12 +1849,13 @@ async function handleBankDeposit(interaction) {
         .collection(CONFIG.COLLECTION_NAMES.BANK);
 
       const updateResult = await collection.findOneAndUpdate(
-        { channel: interaction.channel.id, currency },
+        { channel: interaction.channel.id, currency, currencySystem: "dnd" },
         {
           $inc: { amount },
           $setOnInsert: {
             channel: interaction.channel.id,
             currency,
+            currencySystem: "dnd",
             createdAt: new Date(),
           },
           $set: { updatedAt: new Date() },
@@ -1917,6 +1918,7 @@ async function handleBankWithdraw(interaction) {
       const existingEntry = await collection.findOne({
         channel: interaction.channel.id,
         currency,
+        currencySystem: "dnd",
       });
 
       if (!existingEntry || existingEntry.amount < amount) {
@@ -1928,7 +1930,7 @@ async function handleBankWithdraw(interaction) {
       }
 
       const updateResult = await collection.findOneAndUpdate(
-        { channel: interaction.channel.id, currency },
+        { channel: interaction.channel.id, currency, currencySystem: "dnd" },
         {
           $inc: { amount: -amount },
           $set: { updatedAt: new Date() },
@@ -1954,7 +1956,7 @@ async function handleBankWithdraw(interaction) {
       );
 
       if (updateResult.amount <= 0) {
-        await collection.deleteOne({ channel: interaction.channel.id, currency });
+        await collection.deleteOne({ channel: interaction.channel.id, currency, currencySystem: "dnd" });
         await interaction.editReply(
           `Withdrew \`${amount}\` **${currency}** (${CURRENCY_ABBREVIATIONS[currency]}). Balance: \`${oldAmount}\` → \`0\` ${CURRENCY_ABBREVIATIONS[currency]}. Currency removed from bank.`
         );
@@ -1988,8 +1990,14 @@ async function handleBankBalance(interaction) {
         .db()
         .collection(CONFIG.COLLECTION_NAMES.BANK);
 
+      // First, update any existing documents that don't have currencySystem field
+      await collection.updateMany(
+        { channel: interaction.channel.id, currencySystem: { $exists: false } },
+        { $set: { currencySystem: "dnd" } }
+      );
+
       const currencies = await collection
-        .find({ channel: interaction.channel.id })
+        .find({ channel: interaction.channel.id, currencySystem: "dnd" })
         .sort({ currency: 1 })
         .toArray();
 
@@ -2084,13 +2092,20 @@ async function handleBankClear(interaction) {
         .db()
         .collection(CONFIG.COLLECTION_NAMES.BANK);
 
+      // First, update any existing documents that don't have currencySystem field
+      await collection.updateMany(
+        { channel: interaction.channel.id, currencySystem: { $exists: false } },
+        { $set: { currencySystem: "dnd" } }
+      );
+
       // Get currencies before deletion for audit log
       const currenciesBeforeDeletion = await collection
-        .find({ channel: interaction.channel.id })
+        .find({ channel: interaction.channel.id, currencySystem: "dnd" })
         .toArray();
 
       const result = await collection.deleteMany({
         channel: interaction.channel.id,
+        currencySystem: "dnd",
       });
 
       if (result.deletedCount === 0) {
@@ -2137,8 +2152,14 @@ async function handleBankAudit(interaction) {
         .db()
         .collection(CONFIG.COLLECTION_NAMES.BANK_AUDIT_LOG);
 
+      // First, update any existing audit documents that don't have currencySystem field
+      await auditCollection.updateMany(
+        { channel: interaction.channel.id, currencySystem: { $exists: false } },
+        { $set: { currencySystem: "dnd" } }
+      );
+
       const auditEntries = await auditCollection
-        .find({ channel: interaction.channel.id })
+        .find({ channel: interaction.channel.id, $or: [{ currencySystem: "dnd" }, { currencySystem: { $exists: false } }] })
         .sort({ timestamp: -1 })
         .limit(limit)
         .toArray();
@@ -2203,18 +2224,31 @@ async function handleBankConvert(interaction) {
       const bankCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK);
       const feeCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_FEES);
 
+      // First, update any existing fee documents that don't have currencySystem field
+      await feeCollection.updateMany(
+        { channel: interaction.channel.id, currencySystem: { $exists: false } },
+        { $set: { currencySystem: "dnd" } }
+      );
+
       // Get fee rate for this channel first
-      const feeConfig = await feeCollection.findOne({ channel: interaction.channel.id });
+      const feeConfig = await feeCollection.findOne({ channel: interaction.channel.id, currencySystem: "dnd" });
       const feeRate = feeConfig?.feeRate || DEFAULT_CONVERSION_FEE;
 
       // Calculate fee from source currency first
       const feeAmount = Math.ceil(amount * feeRate);
       const totalRequired = amount + feeAmount;
 
+      // First, update any existing documents that don't have currencySystem field
+      await bankCollection.updateMany(
+        { channel: interaction.channel.id, currencySystem: { $exists: false } },
+        { $set: { currencySystem: "dnd" } }
+      );
+
       // Check if user has sufficient balance (including fee)
       const sourceEntry = await bankCollection.findOne({
         channel: interaction.channel.id,
         currency: fromCurrency,
+        currencySystem: "dnd",
       });
 
       if (!sourceEntry || sourceEntry.amount < totalRequired) {
@@ -2258,18 +2292,19 @@ async function handleBankConvert(interaction) {
       // Perform the conversion
       // Remove source currency (conversion amount + fee)
       await bankCollection.updateOne(
-        { channel: interaction.channel.id, currency: fromCurrency },
+        { channel: interaction.channel.id, currency: fromCurrency, currencySystem: "dnd" },
         { $inc: { amount: -totalRequired }, $set: { updatedAt: new Date() } }
       );
 
       // Add target currency
       await bankCollection.findOneAndUpdate(
-        { channel: interaction.channel.id, currency: toCurrency },
+        { channel: interaction.channel.id, currency: toCurrency, currencySystem: "dnd" },
         {
           $inc: { amount: finalConvertedAmount },
           $setOnInsert: {
             channel: interaction.channel.id,
             currency: toCurrency,
+            currencySystem: "dnd",
             createdAt: new Date(),
           },
           $set: { updatedAt: new Date() },
@@ -2280,6 +2315,7 @@ async function handleBankConvert(interaction) {
       // Clean up zero balances
       await bankCollection.deleteMany({
         channel: interaction.channel.id,
+        currencySystem: "dnd",
         amount: { $lte: 0 }
       });
 
@@ -2341,8 +2377,14 @@ async function handleBankSetFee(interaction) {
     await withDatabase(async (client) => {
       const feeCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_FEES);
 
+      // First, update any existing fee documents that don't have currencySystem field
+      await feeCollection.updateMany(
+        { channel: interaction.channel.id, currencySystem: { $exists: false } },
+        { $set: { currencySystem: "dnd" } }
+      );
+
       await feeCollection.findOneAndUpdate(
-        { channel: interaction.channel.id },
+        { channel: interaction.channel.id, currencySystem: "dnd" },
         {
           $set: {
             feeRate,
@@ -2351,6 +2393,7 @@ async function handleBankSetFee(interaction) {
           },
           $setOnInsert: {
             channel: interaction.channel.id,
+            currencySystem: "dnd",
             createdAt: new Date(),
           },
         },
@@ -2395,7 +2438,13 @@ async function handleBankFees(interaction) {
     await withDatabase(async (client) => {
       const feeCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_FEES);
 
-      const feeConfig = await feeCollection.findOne({ channel: interaction.channel.id });
+      // First, update any existing fee documents that don't have currencySystem field
+      await feeCollection.updateMany(
+        { channel: interaction.channel.id, currencySystem: { $exists: false } },
+        { $set: { currencySystem: "dnd" } }
+      );
+
+      const feeConfig = await feeCollection.findOne({ channel: interaction.channel.id, currencySystem: "dnd" });
       const feeRate = feeConfig?.feeRate || DEFAULT_CONVERSION_FEE;
       const feePercentage = (feeRate * 100).toFixed(1);
 
@@ -2444,6 +2493,7 @@ async function recordBankAuditLog(client, channel, action, userId, username, det
       action,
       userId,
       username,
+      currencySystem: "dnd",
       timestamp: new Date(),
       details,
     };
