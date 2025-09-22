@@ -1,4 +1,4 @@
-import { CURRENCY_TYPES, CURRENCY_ABBREVIATIONS, DEFAULT_CONVERSION_FEE } from './config.js';
+import { CURRENCY_TYPES, CURRENCY_ABBREVIATIONS, DEFAULT_CONVERSION_FEE, CONFIG } from './config.js';
 import { connectToDatabase, withDatabase } from '../../../database/operations.js';
 
 // Re-export database operations for backward compatibility
