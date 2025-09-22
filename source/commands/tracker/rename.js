@@ -72,18 +72,21 @@ export async function handleTrackerRename(interaction) {
 
         // Record audit log for merge
         await recordAuditLog(
-          client,
-          interaction.channel.id,
-          "rename_merge",
-          interaction.user.id,
-          interaction.user.username,
           {
-            oldName,
-            newName,
-            oldQuantity: existingItem.quantity,
-            mergedWithQuantity: conflictingItem.quantity,
-            totalQuantity,
-          }
+            channel: interaction.channel.id,
+            action: "rename_merge",
+            userId: interaction.user.id,
+            username: interaction.user.username,
+            details: {
+              oldName,
+              newName,
+              oldQuantity: existingItem.quantity,
+              mergedWithQuantity: conflictingItem.quantity,
+              totalQuantity,
+            }
+          },
+          client,
+          CONFIG.COLLECTION_NAMES.TRACKER_AUDIT_LOG
         );
 
         await interaction.editReply(
@@ -103,16 +106,19 @@ export async function handleTrackerRename(interaction) {
 
         // Record audit log for simple rename
         await recordAuditLog(
-          client,
-          interaction.channel.id,
-          "rename",
-          interaction.user.id,
-          interaction.user.username,
           {
-            oldName,
-            newName,
-            quantity: existingItem.quantity,
-          }
+            channel: interaction.channel.id,
+            action: "rename",
+            userId: interaction.user.id,
+            username: interaction.user.username,
+            details: {
+              oldName,
+              newName,
+              quantity: existingItem.quantity,
+            }
+          },
+          client,
+          CONFIG.COLLECTION_NAMES.TRACKER_AUDIT_LOG
         );
 
         await interaction.editReply(

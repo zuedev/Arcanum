@@ -37,18 +37,21 @@ export async function handleTrackerClear(interaction) {
       } else {
         // Record audit log
         await recordAuditLog(
-          client,
-          interaction.channel.id,
-          "clear",
-          interaction.user.id,
-          interaction.user.username,
           {
-            itemsCleared: itemsBeforeDeletion.map(item => ({
-              name: item.name,
-              quantity: item.quantity
-            })),
-            totalItemsCleared: result.deletedCount,
-          }
+            channel: interaction.channel.id,
+            action: "clear",
+            userId: interaction.user.id,
+            username: interaction.user.username,
+            details: {
+              itemsCleared: itemsBeforeDeletion.map(item => ({
+                name: item.name,
+                quantity: item.quantity
+              })),
+              totalItemsCleared: result.deletedCount,
+            }
+          },
+          client,
+          CONFIG.COLLECTION_NAMES.TRACKER_AUDIT_LOG
         );
 
         const itemText = result.deletedCount === 1 ? "item" : "items";
