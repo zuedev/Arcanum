@@ -1,7 +1,6 @@
 import { CONFIG, ERROR_MESSAGES } from '../../config/constants.js';
 import { validateAndSanitizeString } from '../../utils/validation.js';
-import { withDatabase } from '../../database/connection.js';
-import { recordAuditLog } from '../../database/audit.js';
+import { withDatabase, recordAuditLog } from '../../database/operations.js';
 
 /**
  * Handles tracker rename subcommand

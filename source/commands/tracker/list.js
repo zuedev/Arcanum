@@ -1,5 +1,5 @@
 import { CONFIG, ERROR_MESSAGES } from '../../config/constants.js';
-import { withDatabase } from '../../database/connection.js';
+import { withDatabase } from '../../database/operations.js';
 
 /**
  * Handles tracker list subcommand

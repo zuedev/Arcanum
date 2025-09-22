@@ -1,7 +1,7 @@
 import { CONFIG, CURRENCY_ABBREVIATIONS } from './config.js';
 import { validateCurrency, validateNumber } from './utils.js';
 import { performBankDeposit, performBankWithdrawal, recordAuditLog, withDatabase } from '../../../database/operations.js';
-import { handleBankError } from '../../../utils/errorHandlers.js';
+import { handleCommandError } from '../../../utils/errors.js';
 
 /**
  * Handles DND bank deposit with shared operations
@@ -47,7 +47,7 @@ export async function handleDndBankDeposit(interaction) {
       );
     });
   } catch (error) {
-    await handleBankError(error, interaction, "deposit");
+    await handleCommandError(error, interaction, "deposit");
   }
 }
 
@@ -106,6 +106,6 @@ export async function handleDndBankWithdraw(interaction) {
       await interaction.editReply(message);
     });
   } catch (error) {
-    await handleBankError(error, interaction, "withdraw");
+    await handleCommandError(error, interaction, "withdraw");
   }
 }

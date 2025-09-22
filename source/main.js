@@ -16,6 +16,7 @@ import { formatUptime, formatBytes } from './utils/formatting.js';
 // Import services
 import { createCommands } from './services/commands.js';
 import { executeCommand } from './services/commandHandler.js';
+import { handleCommandError } from './utils/errors.js';
 
 // ===== ENVIRONMENT VALIDATION =====
 
@@ -54,8 +55,6 @@ async function startBot() {
       await interaction.deferReply();
       await executeCommand(interaction);
     } catch (error) {
-      const { handleCommandError } = await import('./utils/errorHandlers.js');
-
       const customMessages = {
         "Database connection failed": ERROR_MESSAGES.DATABASE_ERROR
       };
@@ -158,39 +157,21 @@ async function logBotStatistics(client) {
   // Get Discord.js version dynamically
   let discordVersion = "Unknown";
   try {
-    // Method 1: Try to get version from Discord.js constants
-    if (client.rest?.version) {
-      discordVersion = client.rest.version;
-    } else {
-      // Method 2: Read package.json directly from filesystem
-      const fs = await import('fs');
-      const path = await import('path');
-      const packagePath = path.resolve(process.cwd(), 'node_modules', 'discord.js', 'package.json');
+    const fs = await import('fs');
+    const path = await import('path');
+    const ourPackagePath = path.resolve(process.cwd(), 'package.json');
 
-      if (fs.existsSync(packagePath)) {
-        const packageContent = fs.readFileSync(packagePath, 'utf8');
-        const packageData = JSON.parse(packageContent);
-        discordVersion = packageData.version;
+    if (fs.existsSync(ourPackagePath)) {
+      const ourPackageContent = fs.readFileSync(ourPackagePath, 'utf8');
+      const ourPackageData = JSON.parse(ourPackageContent);
+      const discordDep = ourPackageData.dependencies?.['discord.js'];
+      if (discordDep) {
+        discordVersion = discordDep.replace(/[\^~]/, ''); // Remove version prefixes
       }
     }
   } catch (error) {
-    // Fallback to reading from our own package.json dependencies
-    try {
-      const fs = await import('fs');
-      const path = await import('path');
-      const ourPackagePath = path.resolve(process.cwd(), 'package.json');
-
-      if (fs.existsSync(ourPackagePath)) {
-        const ourPackageContent = fs.readFileSync(ourPackagePath, 'utf8');
-        const ourPackageData = JSON.parse(ourPackageContent);
-        const discordDep = ourPackageData.dependencies?.['discord.js'];
-        if (discordDep) {
-          discordVersion = discordDep.replace(/[\^~]/, ''); // Remove version prefixes
-        }
-      }
-    } catch (fallbackError) {
-      discordVersion = "14.15.3"; // Final fallback
-    }
+    console.error("Could not read discord.js version from package.json", error);
+    discordVersion = "14.15.3"; // Final fallback
   }
 
   const performanceStats = {
@@ -274,10 +255,10 @@ async function registerCommands(client) {
 
 // ===== MAIN EXECUTION =====
 
-async function main() {
+function main() {
   try {
     console.log("Starting bot...");
-    await startBot();
+    startBot();
   } catch (error) {
     console.error("Fatal error during startup:", error);
     process.exit(1);
