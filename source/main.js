@@ -23,10 +23,32 @@ const CONFIG = {
   COLLECTION_NAMES: {
     TRACKERS: "trackers",
     TRACKER_AUDIT_LOG: "tracker_audit_log",
+    BANK: "bank",
+    BANK_AUDIT_LOG: "bank_audit_log",
+    BANK_FEES: "bank_fees",
   },
 };
 
 const DICE_TYPES = [4, 6, 8, 10, 12, 20, 100];
+
+const CURRENCY_TYPES = ["platinum", "gold", "silver", "electrum", "copper"];
+const CURRENCY_ABBREVIATIONS = {
+  platinum: "pp",
+  gold: "gp",
+  silver: "sp",
+  electrum: "ep",
+  copper: "cp"
+};
+
+const CURRENCY_TO_GOLD_CONVERSION = {
+  platinum: 10,    // 1 pp = 10 gp
+  gold: 1,         // 1 gp = 1 gp
+  electrum: 0.5,   // 1 ep = 0.5 gp
+  silver: 0.1,     // 1 sp = 0.1 gp
+  copper: 0.01     // 1 cp = 0.01 gp
+};
+
+const DEFAULT_CONVERSION_FEE = 0.1; // 10% default fee
 
 const ERROR_MESSAGES = {
   INVALID_QUANTITY: "The quantity must be an integer greater than 0.",
@@ -38,6 +60,11 @@ const ERROR_MESSAGES = {
     "You must have the `MANAGE_CHANNELS` permission to clear the tracker.",
   MAX_DICE_EXCEEDED: `❌ Maximum of ${CONFIG.MAX_DICE_QUANTITY} dice allowed per roll.`,
   MAX_SIDES_EXCEEDED: `❌ Maximum of ${CONFIG.MAX_DICE_SIDES} sides allowed per die.`,
+  INVALID_CURRENCY: `Invalid currency type. Valid currencies are: ${CURRENCY_TYPES.map(c => `${c} (${CURRENCY_ABBREVIATIONS[c]})`).join(", ")}.`,
+  BANK_EMPTY: "The bank is empty.",
+  INVALID_FEE_RATE: "Fee rate must be a number between 0 and 1 (0% to 100%).",
+  SAME_CURRENCY_CONVERSION: "Cannot convert currency to the same type.",
+  INSUFFICIENT_CONVERSION_BALANCE: "Insufficient balance for conversion.",
   GENERIC_ERROR: "An unexpected error occurred. Please try again.",
   DATABASE_ERROR: "An error occurred while accessing the database.",
 };
@@ -142,6 +169,39 @@ function validateAndSanitizeString(
   }
 
   return sanitized;
+}
+
+/**
+ * Validates and normalizes currency type
+ * @param {string} currency - Currency type to validate
+ * @returns {string} Normalized currency type
+ * @throws {Error} If currency is invalid
+ */
+function validateCurrency(currency) {
+  if (typeof currency !== "string") {
+    throw new Error("Currency must be a string");
+  }
+
+  const normalizedCurrency = currency.toLowerCase().trim();
+
+  if (!CURRENCY_TYPES.includes(normalizedCurrency)) {
+    throw new Error(`Invalid currency type. Valid currencies are: ${CURRENCY_TYPES.map(c => `${c} (${CURRENCY_ABBREVIATIONS[c]})`).join(", ")}.`);
+  }
+
+  return normalizedCurrency;
+}
+
+/**
+ * Validates fee rate input
+ * @param {number} feeRate - Fee rate to validate (0-1)
+ * @returns {number} Validated fee rate
+ * @throws {Error} If fee rate is invalid
+ */
+function validateFeeRate(feeRate) {
+  if (typeof feeRate !== "number" || isNaN(feeRate) || feeRate < 0 || feeRate > 1) {
+    throw new Error("Fee rate must be a number between 0 and 1 (0% to 100%).");
+  }
+  return feeRate;
 }
 
 /**
@@ -449,7 +509,132 @@ function createCommands() {
       )
   );
 
+  // Bank command
+  const bankCommand = new SlashCommandBuilder()
+    .setName("bank")
+    .setDescription("Manage currency for the current channel")
+    .addSubcommand((sub) =>
+      sub
+        .setName("deposit")
+        .setDescription("Deposit currency into the bank")
+        .addStringOption((opt) =>
+          opt
+            .setName("currency")
+            .setDescription("The type of currency")
+            .setRequired(true)
+            .addChoices(
+              ...CURRENCY_TYPES.map(currency => ({
+                name: `${currency} (${CURRENCY_ABBREVIATIONS[currency]})`,
+                value: currency
+              }))
+            )
+        )
+        .addIntegerOption((opt) =>
+          opt
+            .setName("amount")
+            .setDescription("The amount to deposit")
+            .setRequired(true)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("withdraw")
+        .setDescription("Withdraw currency from the bank")
+        .addStringOption((opt) =>
+          opt
+            .setName("currency")
+            .setDescription("The type of currency")
+            .setRequired(true)
+            .addChoices(
+              ...CURRENCY_TYPES.map(currency => ({
+                name: `${currency} (${CURRENCY_ABBREVIATIONS[currency]})`,
+                value: currency
+              }))
+            )
+        )
+        .addIntegerOption((opt) =>
+          opt
+            .setName("amount")
+            .setDescription("The amount to withdraw")
+            .setRequired(true)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub.setName("balance").setDescription("View the current bank balance")
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("clear")
+        .setDescription("Clear all currency from the bank")
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("audit")
+        .setDescription("View the audit log of bank transactions")
+        .addIntegerOption((opt) =>
+          opt
+            .setName("limit")
+            .setDescription("Number of recent entries to show (default: 20, max: 100)")
+            .setMinValue(1)
+            .setMaxValue(100)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("convert")
+        .setDescription("Convert currency from one type to another")
+        .addStringOption((opt) =>
+          opt
+            .setName("from")
+            .setDescription("Currency to convert from")
+            .setRequired(true)
+            .addChoices(
+              ...CURRENCY_TYPES.map(currency => ({
+                name: `${currency} (${CURRENCY_ABBREVIATIONS[currency]})`,
+                value: currency
+              }))
+            )
+        )
+        .addStringOption((opt) =>
+          opt
+            .setName("to")
+            .setDescription("Currency to convert to")
+            .setRequired(true)
+            .addChoices(
+              ...CURRENCY_TYPES.map(currency => ({
+                name: `${currency} (${CURRENCY_ABBREVIATIONS[currency]})`,
+                value: currency
+              }))
+            )
+        )
+        .addIntegerOption((opt) =>
+          opt
+            .setName("amount")
+            .setDescription("Amount to convert")
+            .setRequired(true)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("setfee")
+        .setDescription("Set conversion fee rate (requires MANAGE_CHANNELS)")
+        .addNumberOption((opt) =>
+          opt
+            .setName("rate")
+            .setDescription("Fee rate as decimal (0.1 = 10%, 0.05 = 5%)")
+            .setRequired(true)
+            .setMinValue(0)
+            .setMaxValue(1)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("fees")
+        .setDescription("View current conversion fee settings")
+    );
+
   commands.push(rollCommand);
+  commands.push(bankCommand);
   return commands;
 }
 
@@ -872,6 +1057,7 @@ async function executeCommand(interaction) {
     ping: handlePingCommand,
     tracker: handleTrackerCommand,
     roll: handleRollCommand,
+    bank: handleBankCommand,
   };
 
   const handler = commandHandlers[interaction.commandName];
@@ -916,6 +1102,33 @@ async function handleTrackerCommand(interaction) {
     search: handleTrackerSearch,
     rename: handleTrackerRename,
     audit: handleTrackerAudit,
+  };
+
+  const handler = subcommandHandlers[subcommand];
+  if (!handler) {
+    await interaction.editReply("This subcommand is not supported.");
+    return;
+  }
+
+  await handler(interaction);
+}
+
+/**
+ * Handles bank command and its subcommands
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleBankCommand(interaction) {
+  const subcommand = interaction.options.getSubcommand();
+
+  const subcommandHandlers = {
+    deposit: handleBankDeposit,
+    withdraw: handleBankWithdraw,
+    balance: handleBankBalance,
+    clear: handleBankClear,
+    audit: handleBankAudit,
+    convert: handleBankConvert,
+    setfee: handleBankSetFee,
+    fees: handleBankFees,
   };
 
   const handler = subcommandHandlers[subcommand];
@@ -1600,6 +1813,637 @@ function formatAuditAction(action, details) {
       return `renamed **${details.oldName}** to **${details.newName}**`;
     case "rename_merge":
       return `renamed **${details.oldName}** to **${details.newName}** and merged quantities (${details.oldQuantity} + ${details.mergedWithQuantity} = ${details.totalQuantity})`;
+    default:
+      return `performed action: ${action}`;
+  }
+}
+
+// ===== BANK SUBCOMMAND HANDLERS =====
+
+/**
+ * Handles bank deposit subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleBankDeposit(interaction) {
+  try {
+    const rawCurrency = interaction.options.getString("currency");
+    const amount = interaction.options.getInteger("amount");
+
+    const currency = validateCurrency(rawCurrency);
+    validateNumber(amount, 1);
+
+    await withDatabase(async (client) => {
+      const collection = client
+        .db()
+        .collection(CONFIG.COLLECTION_NAMES.BANK);
+
+      const updateResult = await collection.findOneAndUpdate(
+        { channel: interaction.channel.id, currency },
+        {
+          $inc: { amount },
+          $setOnInsert: {
+            channel: interaction.channel.id,
+            currency,
+            createdAt: new Date(),
+          },
+          $set: { updatedAt: new Date() },
+        },
+        { upsert: true, returnDocument: "after" }
+      );
+
+      const oldAmount = updateResult.amount - amount;
+
+      // Record audit log
+      await recordBankAuditLog(
+        client,
+        interaction.channel.id,
+        "deposit",
+        interaction.user.id,
+        interaction.user.username,
+        {
+          currency,
+          amount,
+          oldAmount,
+          newAmount: updateResult.amount,
+        }
+      );
+
+      await interaction.editReply(
+        `Deposited \`${amount}\` **${currency}** (${CURRENCY_ABBREVIATIONS[currency]}). Balance: \`${oldAmount}\` → \`${updateResult.amount}\` ${CURRENCY_ABBREVIATIONS[currency]}.`
+      );
+    });
+  } catch (error) {
+    console.error("Error in bank deposit:", error);
+
+    if (error.message.includes("currency")) {
+      await interaction.editReply(ERROR_MESSAGES.INVALID_CURRENCY);
+    } else if (error.message.includes("integer")) {
+      await interaction.editReply(ERROR_MESSAGES.INVALID_QUANTITY);
+    } else {
+      await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+    }
+  }
+}
+
+/**
+ * Handles bank withdraw subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleBankWithdraw(interaction) {
+  try {
+    const rawCurrency = interaction.options.getString("currency");
+    const amount = interaction.options.getInteger("amount");
+
+    const currency = validateCurrency(rawCurrency);
+    validateNumber(amount, 1);
+
+    await withDatabase(async (client) => {
+      const collection = client
+        .db()
+        .collection(CONFIG.COLLECTION_NAMES.BANK);
+
+      // Check if currency exists and has sufficient balance
+      const existingEntry = await collection.findOne({
+        channel: interaction.channel.id,
+        currency,
+      });
+
+      if (!existingEntry || existingEntry.amount < amount) {
+        const currentAmount = existingEntry?.amount || 0;
+        await interaction.editReply(
+          `Insufficient **${currency}** balance. Available: \`${currentAmount}\` ${CURRENCY_ABBREVIATIONS[currency]}, requested: \`${amount}\` ${CURRENCY_ABBREVIATIONS[currency]}.`
+        );
+        return;
+      }
+
+      const updateResult = await collection.findOneAndUpdate(
+        { channel: interaction.channel.id, currency },
+        {
+          $inc: { amount: -amount },
+          $set: { updatedAt: new Date() },
+        },
+        { returnDocument: "after" }
+      );
+
+      const oldAmount = updateResult.amount + amount;
+
+      // Record audit log
+      await recordBankAuditLog(
+        client,
+        interaction.channel.id,
+        updateResult.amount <= 0 ? "withdraw_all" : "withdraw",
+        interaction.user.id,
+        interaction.user.username,
+        {
+          currency,
+          amount,
+          oldAmount,
+          newAmount: updateResult.amount,
+        }
+      );
+
+      if (updateResult.amount <= 0) {
+        await collection.deleteOne({ channel: interaction.channel.id, currency });
+        await interaction.editReply(
+          `Withdrew \`${amount}\` **${currency}** (${CURRENCY_ABBREVIATIONS[currency]}). Balance: \`${oldAmount}\` → \`0\` ${CURRENCY_ABBREVIATIONS[currency]}. Currency removed from bank.`
+        );
+      } else {
+        await interaction.editReply(
+          `Withdrew \`${amount}\` **${currency}** (${CURRENCY_ABBREVIATIONS[currency]}). Balance: \`${oldAmount}\` → \`${updateResult.amount}\` ${CURRENCY_ABBREVIATIONS[currency]}.`
+        );
+      }
+    });
+  } catch (error) {
+    console.error("Error in bank withdraw:", error);
+
+    if (error.message.includes("currency")) {
+      await interaction.editReply(ERROR_MESSAGES.INVALID_CURRENCY);
+    } else if (error.message.includes("integer")) {
+      await interaction.editReply(ERROR_MESSAGES.INVALID_QUANTITY);
+    } else {
+      await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+    }
+  }
+}
+
+/**
+ * Handles bank balance subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleBankBalance(interaction) {
+  try {
+    await withDatabase(async (client) => {
+      const collection = client
+        .db()
+        .collection(CONFIG.COLLECTION_NAMES.BANK);
+
+      const currencies = await collection
+        .find({ channel: interaction.channel.id })
+        .sort({ currency: 1 })
+        .toArray();
+
+      if (!currencies.length) {
+        await interaction.editReply(ERROR_MESSAGES.BANK_EMPTY);
+        return;
+      }
+
+      // Calculate total pieces and total gold value
+      const totalPieces = currencies.reduce((sum, entry) => sum + entry.amount, 0);
+      const totalGoldValue = currencies.reduce((sum, entry) => {
+        return sum + (entry.amount * CURRENCY_TO_GOLD_CONVERSION[entry.currency]);
+      }, 0);
+
+      // Format total gold value with appropriate precision
+      const formattedTotalGold = totalGoldValue % 1 === 0
+        ? totalGoldValue.toString()
+        : totalGoldValue.toFixed(2);
+
+      const header = `**Bank Balance** (${currencies.length} currencies, ${totalPieces} total pieces, ${formattedTotalGold} total gold):\n\n`;
+
+      // Sort currencies by the order defined in CURRENCY_TYPES
+      const sortedCurrencies = currencies.sort((a, b) => {
+        return CURRENCY_TYPES.indexOf(a.currency) - CURRENCY_TYPES.indexOf(b.currency);
+      });
+
+      const currencyList = sortedCurrencies
+        .map(entry => {
+          const goldValue = entry.amount * CURRENCY_TO_GOLD_CONVERSION[entry.currency];
+          const formattedGoldValue = goldValue % 1 === 0 ? goldValue.toString() : goldValue.toFixed(2);
+          return `**${entry.currency}**: ${entry.amount} ${CURRENCY_ABBREVIATIONS[entry.currency]} (${formattedGoldValue} gp)`;
+        })
+        .join("\n");
+
+      const message = header + currencyList;
+
+      if (message.length > CONFIG.TRACKER_MESSAGE_LIMIT) {
+        const dataJSON = {
+          summary: {
+            totalCurrencies: currencies.length,
+            totalPieces: totalPieces,
+            totalGoldValue: formattedTotalGold
+          },
+          currencies: sortedCurrencies.reduce((acc, entry) => {
+            const goldValue = entry.amount * CURRENCY_TO_GOLD_CONVERSION[entry.currency];
+            const formattedGoldValue = goldValue % 1 === 0 ? goldValue.toString() : goldValue.toFixed(2);
+            acc[`${entry.currency} (${CURRENCY_ABBREVIATIONS[entry.currency]})`] = {
+              amount: entry.amount,
+              goldValue: formattedGoldValue
+            };
+            return acc;
+          }, {})
+        };
+
+        await interaction.editReply({
+          content: `**Bank Balance** (${currencies.length} currencies, ${totalPieces} total pieces, ${formattedTotalGold} total gold)\n\nThe balance is too large to display, here is a JSON file instead.`,
+          files: [
+            {
+              attachment: Buffer.from(JSON.stringify(dataJSON, null, 2), "utf8"),
+              name: `bank-balance-${interaction.channel.id}.json`,
+            },
+          ],
+        });
+      } else {
+        await interaction.editReply(message);
+      }
+    });
+  } catch (error) {
+    console.error("Error in bank balance:", error);
+    await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+  }
+}
+
+/**
+ * Handles bank clear subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleBankClear(interaction) {
+  try {
+    // Check permissions
+    if (
+      !interaction.channel
+        .permissionsFor(interaction.member)
+        ?.has(PermissionFlagsBits.ManageChannels)
+    ) {
+      await interaction.editReply(ERROR_MESSAGES.NO_PERMISSION);
+      return;
+    }
+
+    await withDatabase(async (client) => {
+      const collection = client
+        .db()
+        .collection(CONFIG.COLLECTION_NAMES.BANK);
+
+      // Get currencies before deletion for audit log
+      const currenciesBeforeDeletion = await collection
+        .find({ channel: interaction.channel.id })
+        .toArray();
+
+      const result = await collection.deleteMany({
+        channel: interaction.channel.id,
+      });
+
+      if (result.deletedCount === 0) {
+        await interaction.editReply("The bank is already empty.");
+      } else {
+        // Record audit log
+        await recordBankAuditLog(
+          client,
+          interaction.channel.id,
+          "clear",
+          interaction.user.id,
+          interaction.user.username,
+          {
+            currenciesCleared: currenciesBeforeDeletion.map(entry => ({
+              currency: entry.currency,
+              amount: entry.amount
+            })),
+            totalCurrenciesCleared: result.deletedCount,
+          }
+        );
+
+        const currencyText = result.deletedCount === 1 ? "currency" : "currencies";
+        await interaction.editReply(
+          `Cleared ${result.deletedCount} ${currencyText} from the bank.`
+        );
+      }
+    });
+  } catch (error) {
+    console.error("Error in bank clear:", error);
+    await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+  }
+}
+
+/**
+ * Handles bank audit subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleBankAudit(interaction) {
+  try {
+    const limit = interaction.options.getInteger("limit") || 20;
+
+    await withDatabase(async (client) => {
+      const auditCollection = client
+        .db()
+        .collection(CONFIG.COLLECTION_NAMES.BANK_AUDIT_LOG);
+
+      const auditEntries = await auditCollection
+        .find({ channel: interaction.channel.id })
+        .sort({ timestamp: -1 })
+        .limit(limit)
+        .toArray();
+
+      if (!auditEntries.length) {
+        await interaction.editReply("No bank audit log entries found for this channel.");
+        return;
+      }
+
+      let message = `**Bank Audit Log** (${auditEntries.length} recent entries):\n\n`;
+
+      for (const entry of auditEntries.reverse()) {
+        const timestamp = entry.timestamp.toLocaleString();
+        const actionText = formatBankAuditAction(entry.action, entry.details);
+        message += `**${timestamp}** - <@${entry.userId}> ${actionText}\n`;
+      }
+
+      if (message.length > CONFIG.TRACKER_MESSAGE_LIMIT) {
+        // Create detailed JSON file for large audit logs
+        const auditData = auditEntries.map(entry => ({
+          timestamp: entry.timestamp.toISOString(),
+          user: entry.username,
+          action: entry.action,
+          details: entry.details
+        }));
+
+        await interaction.editReply({
+          content: `**Bank Audit Log** (${auditEntries.length} recent entries)\n\nThe audit log is too large to display, here is a JSON file instead.`,
+          files: [
+            {
+              attachment: Buffer.from(JSON.stringify(auditData, null, 2), "utf8"),
+              name: `bank-audit-${interaction.channel.id}.json`,
+            },
+          ],
+        });
+      } else {
+        await interaction.editReply(message);
+      }
+    });
+  } catch (error) {
+    console.error("Error in bank audit:", error);
+    await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+  }
+}
+
+/**
+ * Handles bank convert subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleBankConvert(interaction) {
+  try {
+    const fromCurrency = validateCurrency(interaction.options.getString("from"));
+    const toCurrency = validateCurrency(interaction.options.getString("to"));
+    const amount = validateNumber(interaction.options.getInteger("amount"), 1);
+
+    if (fromCurrency === toCurrency) {
+      await interaction.editReply(ERROR_MESSAGES.SAME_CURRENCY_CONVERSION);
+      return;
+    }
+
+    await withDatabase(async (client) => {
+      const bankCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK);
+      const feeCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_FEES);
+
+      // Check if user has sufficient balance
+      const sourceEntry = await bankCollection.findOne({
+        channel: interaction.channel.id,
+        currency: fromCurrency,
+      });
+
+      if (!sourceEntry || sourceEntry.amount < amount) {
+        const currentAmount = sourceEntry?.amount || 0;
+        await interaction.editReply(
+          `${ERROR_MESSAGES.INSUFFICIENT_CONVERSION_BALANCE} Available: \`${currentAmount}\` ${CURRENCY_ABBREVIATIONS[fromCurrency]}, requested: \`${amount}\` ${CURRENCY_ABBREVIATIONS[fromCurrency]}.`
+        );
+        return;
+      }
+
+      // Get fee rate for this channel
+      const feeConfig = await feeCollection.findOne({ channel: interaction.channel.id });
+      const feeRate = feeConfig?.feeRate || DEFAULT_CONVERSION_FEE;
+
+      // Calculate conversion
+      const goldValueFrom = amount * CURRENCY_TO_GOLD_CONVERSION[fromCurrency];
+      const baseConvertedAmount = goldValueFrom / CURRENCY_TO_GOLD_CONVERSION[toCurrency];
+      const feeAmount = baseConvertedAmount * feeRate;
+      const finalConvertedAmount = Math.floor(baseConvertedAmount - feeAmount);
+
+      if (finalConvertedAmount <= 0) {
+        await interaction.editReply(
+          `Conversion would result in 0 ${CURRENCY_ABBREVIATIONS[toCurrency]} after fees. Try converting a larger amount.`
+        );
+        return;
+      }
+
+      // Perform the conversion
+      // Remove source currency
+      await bankCollection.updateOne(
+        { channel: interaction.channel.id, currency: fromCurrency },
+        { $inc: { amount: -amount }, $set: { updatedAt: new Date() } }
+      );
+
+      // Add target currency
+      await bankCollection.findOneAndUpdate(
+        { channel: interaction.channel.id, currency: toCurrency },
+        {
+          $inc: { amount: finalConvertedAmount },
+          $setOnInsert: {
+            channel: interaction.channel.id,
+            currency: toCurrency,
+            createdAt: new Date(),
+          },
+          $set: { updatedAt: new Date() },
+        },
+        { upsert: true }
+      );
+
+      // Clean up zero balances
+      await bankCollection.deleteMany({
+        channel: interaction.channel.id,
+        amount: { $lte: 0 }
+      });
+
+      // Record audit log
+      await recordBankAuditLog(
+        client,
+        interaction.channel.id,
+        "convert",
+        interaction.user.id,
+        interaction.user.username,
+        {
+          fromCurrency,
+          toCurrency,
+          fromAmount: amount,
+          toAmount: finalConvertedAmount,
+          feeRate: feeRate,
+          feeAmount: Math.ceil(feeAmount),
+          goldValue: goldValueFrom
+        }
+      );
+
+      const feePercentage = (feeRate * 100).toFixed(1);
+      await interaction.editReply(
+        `Converted \`${amount}\` **${fromCurrency}** (${CURRENCY_ABBREVIATIONS[fromCurrency]}) → \`${finalConvertedAmount}\` **${toCurrency}** (${CURRENCY_ABBREVIATIONS[toCurrency]})\n` +
+        `Fee: ${feePercentage}% (\`${Math.ceil(feeAmount)}\` ${CURRENCY_ABBREVIATIONS[toCurrency]} deducted)`
+      );
+    });
+  } catch (error) {
+    console.error("Error in bank convert:", error);
+
+    if (error.message.includes("currency")) {
+      await interaction.editReply(ERROR_MESSAGES.INVALID_CURRENCY);
+    } else if (error.message.includes("integer")) {
+      await interaction.editReply(ERROR_MESSAGES.INVALID_QUANTITY);
+    } else {
+      await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+    }
+  }
+}
+
+/**
+ * Handles bank setfee subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleBankSetFee(interaction) {
+  try {
+    // Check permissions
+    if (
+      !interaction.channel
+        .permissionsFor(interaction.member)
+        ?.has(PermissionFlagsBits.ManageChannels)
+    ) {
+      await interaction.editReply(ERROR_MESSAGES.NO_PERMISSION);
+      return;
+    }
+
+    const feeRate = validateFeeRate(interaction.options.getNumber("rate"));
+
+    await withDatabase(async (client) => {
+      const feeCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_FEES);
+
+      await feeCollection.findOneAndUpdate(
+        { channel: interaction.channel.id },
+        {
+          $set: {
+            feeRate,
+            updatedAt: new Date(),
+            updatedBy: interaction.user.id,
+          },
+          $setOnInsert: {
+            channel: interaction.channel.id,
+            createdAt: new Date(),
+          },
+        },
+        { upsert: true }
+      );
+
+      // Record audit log
+      await recordBankAuditLog(
+        client,
+        interaction.channel.id,
+        "setfee",
+        interaction.user.id,
+        interaction.user.username,
+        {
+          newFeeRate: feeRate,
+          feePercentage: (feeRate * 100).toFixed(1)
+        }
+      );
+
+      const feePercentage = (feeRate * 100).toFixed(1);
+      await interaction.editReply(
+        `Set currency conversion fee to \`${feePercentage}%\` for this channel.`
+      );
+    });
+  } catch (error) {
+    console.error("Error in bank setfee:", error);
+
+    if (error.message.includes("Fee rate")) {
+      await interaction.editReply(ERROR_MESSAGES.INVALID_FEE_RATE);
+    } else {
+      await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+    }
+  }
+}
+
+/**
+ * Handles bank fees subcommand
+ * @param {ChatInputCommandInteraction} interaction - Discord interaction
+ */
+async function handleBankFees(interaction) {
+  try {
+    await withDatabase(async (client) => {
+      const feeCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_FEES);
+
+      const feeConfig = await feeCollection.findOne({ channel: interaction.channel.id });
+      const feeRate = feeConfig?.feeRate || DEFAULT_CONVERSION_FEE;
+      const feePercentage = (feeRate * 100).toFixed(1);
+
+      const isDefault = !feeConfig;
+      const lastUpdated = feeConfig?.updatedAt?.toLocaleString() || "Never";
+
+      let message = `**Bank Conversion Fees:**\n\n`;
+      message += `**Current Fee Rate:** ${feePercentage}%`;
+
+      if (isDefault) {
+        message += ` (default)\n`;
+      } else {
+        message += `\n**Last Updated:** ${lastUpdated}\n`;
+      }
+
+      message += `\n**Fee Examples:**\n`;
+      message += `• Converting 100 gp → sp: Fee of ${Math.ceil(100 * 10 * feeRate)} sp\n`;
+      message += `• Converting 50 pp → gp: Fee of ${Math.ceil(50 * 10 * feeRate)} gp\n`;
+      message += `• Converting 1000 cp → gp: Fee of ${Math.ceil(10 * feeRate)} gp`;
+
+      await interaction.editReply(message);
+    });
+  } catch (error) {
+    console.error("Error in bank fees:", error);
+    await interaction.editReply(ERROR_MESSAGES.DATABASE_ERROR);
+  }
+}
+
+/**
+ * Records an audit log entry for bank changes
+ * @param {MongoClient} client - MongoDB client
+ * @param {string} channel - Channel ID
+ * @param {string} action - Action performed (deposit, withdraw, clear, etc.)
+ * @param {string} userId - User ID who performed the action
+ * @param {string} username - Username who performed the action
+ * @param {Object} details - Additional details about the action
+ */
+async function recordBankAuditLog(client, channel, action, userId, username, details = {}) {
+  try {
+    const auditCollection = client
+      .db()
+      .collection(CONFIG.COLLECTION_NAMES.BANK_AUDIT_LOG);
+
+    const logEntry = {
+      channel,
+      action,
+      userId,
+      username,
+      timestamp: new Date(),
+      details,
+    };
+
+    await auditCollection.insertOne(logEntry);
+  } catch (error) {
+    console.error("Failed to record bank audit log:", error);
+  }
+}
+
+/**
+ * Formats a bank audit action into human-readable text
+ * @param {string} action - The action type
+ * @param {Object} details - Action details
+ * @returns {string} Formatted action text
+ */
+function formatBankAuditAction(action, details) {
+  const abbrev = CURRENCY_ABBREVIATIONS[details.currency] || "";
+
+  switch (action) {
+    case "deposit":
+      return `deposited ${details.amount} **${details.currency}** (${details.oldAmount} → ${details.newAmount} ${abbrev})`;
+    case "withdraw":
+      return `withdrew ${details.amount} **${details.currency}** (${details.oldAmount} → ${details.newAmount} ${abbrev})`;
+    case "withdraw_all":
+      return `withdrew all **${details.currency}** (${details.oldAmount} → 0 ${abbrev})`;
+    case "clear":
+      return `cleared ${details.totalCurrenciesCleared} currenc${details.totalCurrenciesCleared === 1 ? 'y' : 'ies'} from bank`;
+    case "convert":
+      return `converted ${details.fromAmount} **${details.fromCurrency}** to ${details.toAmount} **${details.toCurrency}** (fee: ${(details.feeRate * 100).toFixed(1)}%)`;
+    case "setfee":
+      return `set conversion fee rate to ${details.feePercentage}%`;
     default:
       return `performed action: ${action}`;
   }

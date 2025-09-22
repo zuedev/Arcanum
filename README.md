@@ -24,6 +24,22 @@ A Discord bot for tabletop gaming enthusiasts, featuring dice rolling and item t
 - Per-channel tracking with automatic cleanup of zero-quantity items
 - Complete audit trail of all changes with timestamps and user information
 
+### 🏦 Currency Bank
+
+- **Deposit currency**: `/bank deposit currency:gold amount:50` (supports platinum, gold, silver, electrum, copper)
+- **Withdraw currency**: `/bank withdraw currency:silver amount:10` (with balance validation)
+- **Check balance**: `/bank balance` (shows all currencies with gold value conversion)
+- **Convert currency**: `/bank convert from:gold to:silver amount:10` (with configurable fees)
+- **Set conversion fees**: `/bank setfee rate:0.05` (5% fee, requires MANAGE_CHANNELS)
+- **View fee settings**: `/bank fees` (current rates and examples)
+- **Clear bank**: `/bank clear` (requires MANAGE_CHANNELS permission)
+- **View audit log**: `/bank audit limit:30` (complete transaction history)
+- Per-channel currency management with automatic cleanup
+- Configurable conversion fees (default 10%, 0-100% range)
+- D&D standard conversion rates with fee deduction
+- Built-in currency validation and abbreviation display
+- Complete audit trail of all transactions and fee changes
+
 ### 🏓 Utility
 
 - **Ping**: `/ping` - Check if the bot is responsive
@@ -98,6 +114,19 @@ npm test
 /tracker rename old_name:"Health Potion" new_name:"Healing Elixir"
 /tracker clear  # Requires MANAGE_CHANNELS permission
 /tracker audit limit:20  # View recent 20 changes (default: 20, max: 100)
+```
+
+### Currency Bank
+
+```
+/bank deposit currency:gold amount:100
+/bank withdraw currency:silver amount:25
+/bank balance  # View all currency balances with gold conversion
+/bank convert from:gold to:silver amount:10  # Convert with fees
+/bank setfee rate:0.05  # Set 5% conversion fee (admin only)
+/bank fees     # View current fee settings and examples
+/bank clear    # Requires MANAGE_CHANNELS permission
+/bank audit limit:15  # View recent 15 transactions
 ```
 
 ## Technical Details
