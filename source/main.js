@@ -2220,8 +2220,26 @@ async function handleBankConvert(interaction) {
 
       // Only allow conversions that result in whole numbers
       if (!Number.isInteger(finalConvertedAmount)) {
+        // Calculate nearest amounts that would result in whole number conversions
+        const lowerConvertedAmount = Math.floor(finalConvertedAmount);
+        const higherConvertedAmount = Math.ceil(finalConvertedAmount);
+
+        // Calculate the source amounts needed for these whole number conversions
+        const lowerSourceAmount = Math.round(lowerConvertedAmount * CURRENCY_TO_GOLD_CONVERSION[toCurrency] / CURRENCY_TO_GOLD_CONVERSION[fromCurrency]);
+        const higherSourceAmount = Math.round(higherConvertedAmount * CURRENCY_TO_GOLD_CONVERSION[toCurrency] / CURRENCY_TO_GOLD_CONVERSION[fromCurrency]);
+
+        let suggestions = [];
+        if (lowerConvertedAmount > 0 && lowerSourceAmount !== amount) {
+          suggestions.push(`\`${lowerSourceAmount}\` ${CURRENCY_ABBREVIATIONS[fromCurrency]} → \`${lowerConvertedAmount}\` ${CURRENCY_ABBREVIATIONS[toCurrency]}`);
+        }
+        if (higherSourceAmount !== amount) {
+          suggestions.push(`\`${higherSourceAmount}\` ${CURRENCY_ABBREVIATIONS[fromCurrency]} → \`${higherConvertedAmount}\` ${CURRENCY_ABBREVIATIONS[toCurrency]}`);
+        }
+
+        const suggestionText = suggestions.length > 0 ? `\n\nTry these amounts instead:\n${suggestions.join('\n')}` : '';
+
         await interaction.editReply(
-          `Cannot convert \`${amount}\` ${CURRENCY_ABBREVIATIONS[fromCurrency]} to **${toCurrency}** - conversion must result in whole numbers. Try a different amount.`
+          `Cannot convert \`${amount}\` ${CURRENCY_ABBREVIATIONS[fromCurrency]} to **${toCurrency}** - conversion must result in whole numbers.${suggestionText}`
         );
         return;
       }
