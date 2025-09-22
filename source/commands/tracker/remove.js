@@ -48,17 +48,20 @@ export async function handleTrackerRemove(interaction) {
 
       // Record audit log
       await recordAuditLog(
-        client,
-        interaction.channel.id,
-        updateResult.quantity <= 0 ? "remove_all" : "remove",
-        interaction.user.id,
-        interaction.user.username,
         {
-          itemName: name,
-          quantityChanged: quantity,
-          oldQuantity,
-          newQuantity: updateResult.quantity,
-        }
+          channel: interaction.channel.id,
+          action: updateResult.quantity <= 0 ? "remove_all" : "remove",
+          userId: interaction.user.id,
+          username: interaction.user.username,
+          details: {
+            itemName: name,
+            quantityChanged: quantity,
+            oldQuantity,
+            newQuantity: updateResult.quantity,
+          }
+        },
+        client,
+        CONFIG.COLLECTION_NAMES.TRACKER_AUDIT_LOG
       );
 
       if (updateResult.quantity <= 0) {
