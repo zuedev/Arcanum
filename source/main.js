@@ -2192,42 +2192,45 @@ async function handleBankConvert(interaction) {
       const bankCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK);
       const feeCollection = client.db().collection(CONFIG.COLLECTION_NAMES.BANK_FEES);
 
-      // Check if user has sufficient balance
+      // Get fee rate for this channel first
+      const feeConfig = await feeCollection.findOne({ channel: interaction.channel.id });
+      const feeRate = feeConfig?.feeRate || DEFAULT_CONVERSION_FEE;
+
+      // Calculate fee from source currency first
+      const feeAmount = Math.ceil(amount * feeRate);
+      const totalRequired = amount + feeAmount;
+
+      // Check if user has sufficient balance (including fee)
       const sourceEntry = await bankCollection.findOne({
         channel: interaction.channel.id,
         currency: fromCurrency,
       });
 
-      if (!sourceEntry || sourceEntry.amount < amount) {
+      if (!sourceEntry || sourceEntry.amount < totalRequired) {
         const currentAmount = sourceEntry?.amount || 0;
         await interaction.editReply(
-          `${ERROR_MESSAGES.INSUFFICIENT_CONVERSION_BALANCE} Available: \`${currentAmount}\` ${CURRENCY_ABBREVIATIONS[fromCurrency]}, requested: \`${amount}\` ${CURRENCY_ABBREVIATIONS[fromCurrency]}.`
+          `${ERROR_MESSAGES.INSUFFICIENT_CONVERSION_BALANCE} Available: \`${currentAmount}\` ${CURRENCY_ABBREVIATIONS[fromCurrency]}, required: \`${totalRequired}\` ${CURRENCY_ABBREVIATIONS[fromCurrency]} (\`${amount}\` + \`${feeAmount}\` fee).`
         );
         return;
       }
 
-      // Get fee rate for this channel
-      const feeConfig = await feeCollection.findOne({ channel: interaction.channel.id });
-      const feeRate = feeConfig?.feeRate || DEFAULT_CONVERSION_FEE;
+      // Calculate conversion from the full requested amount - must result in whole integers
+      const goldValue = amount * CURRENCY_TO_GOLD_CONVERSION[fromCurrency];
+      const finalConvertedAmount = goldValue / CURRENCY_TO_GOLD_CONVERSION[toCurrency];
 
-      // Calculate conversion
-      const goldValueFrom = amount * CURRENCY_TO_GOLD_CONVERSION[fromCurrency];
-      const baseConvertedAmount = goldValueFrom / CURRENCY_TO_GOLD_CONVERSION[toCurrency];
-      const feeAmount = baseConvertedAmount * feeRate;
-      const finalConvertedAmount = Math.floor(baseConvertedAmount - feeAmount);
-
-      if (finalConvertedAmount <= 0) {
+      // Only allow conversions that result in whole numbers
+      if (!Number.isInteger(finalConvertedAmount)) {
         await interaction.editReply(
-          `Conversion would result in 0 ${CURRENCY_ABBREVIATIONS[toCurrency]} after fees. Try converting a larger amount.`
+          `Cannot convert \`${amount}\` ${CURRENCY_ABBREVIATIONS[fromCurrency]} to **${toCurrency}** - conversion must result in whole numbers. Try a different amount.`
         );
         return;
       }
 
       // Perform the conversion
-      // Remove source currency
+      // Remove source currency (conversion amount + fee)
       await bankCollection.updateOne(
         { channel: interaction.channel.id, currency: fromCurrency },
-        { $inc: { amount: -amount }, $set: { updatedAt: new Date() } }
+        { $inc: { amount: -totalRequired }, $set: { updatedAt: new Date() } }
       );
 
       // Add target currency
@@ -2262,17 +2265,17 @@ async function handleBankConvert(interaction) {
           fromCurrency,
           toCurrency,
           fromAmount: amount,
+          feeAmount: feeAmount,
+          totalDeducted: totalRequired,
           toAmount: finalConvertedAmount,
-          feeRate: feeRate,
-          feeAmount: Math.ceil(feeAmount),
-          goldValue: goldValueFrom
+          feeRate: feeRate
         }
       );
 
       const feePercentage = (feeRate * 100).toFixed(1);
       await interaction.editReply(
         `Converted \`${amount}\` **${fromCurrency}** (${CURRENCY_ABBREVIATIONS[fromCurrency]}) → \`${finalConvertedAmount}\` **${toCurrency}** (${CURRENCY_ABBREVIATIONS[toCurrency]})\n` +
-        `Fee: ${feePercentage}% (\`${Math.ceil(feeAmount)}\` ${CURRENCY_ABBREVIATIONS[toCurrency]} deducted)`
+        `Fee: ${feePercentage}% (\`${feeAmount}\` ${CURRENCY_ABBREVIATIONS[fromCurrency]} deducted before conversion)`
       );
     });
   } catch (error) {
@@ -2441,7 +2444,7 @@ function formatBankAuditAction(action, details) {
     case "clear":
       return `cleared ${details.totalCurrenciesCleared} currenc${details.totalCurrenciesCleared === 1 ? 'y' : 'ies'} from bank`;
     case "convert":
-      return `converted ${details.fromAmount} **${details.fromCurrency}** to ${details.toAmount} **${details.toCurrency}** (fee: ${(details.feeRate * 100).toFixed(1)}%)`;
+      return `converted ${details.fromAmount} **${details.fromCurrency}** → ${details.toAmount} **${details.toCurrency}** (fee: ${details.feeAmount} ${CURRENCY_ABBREVIATIONS[details.fromCurrency]})`;
     case "setfee":
       return `set conversion fee rate to ${details.feePercentage}%`;
     default:
