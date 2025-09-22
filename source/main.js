@@ -513,124 +513,129 @@ function createCommands() {
   const bankCommand = new SlashCommandBuilder()
     .setName("bank")
     .setDescription("Manage currency for the current channel")
-    .addSubcommand((sub) =>
-      sub
-        .setName("deposit")
-        .setDescription("Deposit currency into the bank")
-        .addStringOption((opt) =>
-          opt
-            .setName("currency")
-            .setDescription("The type of currency")
-            .setRequired(true)
-            .addChoices(
-              ...CURRENCY_TYPES.map(currency => ({
-                name: `${currency} (${CURRENCY_ABBREVIATIONS[currency]})`,
-                value: currency
-              }))
+    .addSubcommandGroup((group) =>
+      group
+        .setName("dnd")
+        .setDescription("D&D currency management")
+        .addSubcommand((sub) =>
+          sub
+            .setName("deposit")
+            .setDescription("Deposit D&D currency into the bank")
+            .addStringOption((opt) =>
+              opt
+                .setName("currency")
+                .setDescription("The type of currency")
+                .setRequired(true)
+                .addChoices(
+                  ...CURRENCY_TYPES.map(currency => ({
+                    name: `${currency} (${CURRENCY_ABBREVIATIONS[currency]})`,
+                    value: currency
+                  }))
+                )
+            )
+            .addIntegerOption((opt) =>
+              opt
+                .setName("amount")
+                .setDescription("The amount to deposit")
+                .setRequired(true)
             )
         )
-        .addIntegerOption((opt) =>
-          opt
-            .setName("amount")
-            .setDescription("The amount to deposit")
-            .setRequired(true)
-        )
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("withdraw")
-        .setDescription("Withdraw currency from the bank")
-        .addStringOption((opt) =>
-          opt
-            .setName("currency")
-            .setDescription("The type of currency")
-            .setRequired(true)
-            .addChoices(
-              ...CURRENCY_TYPES.map(currency => ({
-                name: `${currency} (${CURRENCY_ABBREVIATIONS[currency]})`,
-                value: currency
-              }))
+        .addSubcommand((sub) =>
+          sub
+            .setName("withdraw")
+            .setDescription("Withdraw D&D currency from the bank")
+            .addStringOption((opt) =>
+              opt
+                .setName("currency")
+                .setDescription("The type of currency")
+                .setRequired(true)
+                .addChoices(
+                  ...CURRENCY_TYPES.map(currency => ({
+                    name: `${currency} (${CURRENCY_ABBREVIATIONS[currency]})`,
+                    value: currency
+                  }))
+                )
+            )
+            .addIntegerOption((opt) =>
+              opt
+                .setName("amount")
+                .setDescription("The amount to withdraw")
+                .setRequired(true)
             )
         )
-        .addIntegerOption((opt) =>
-          opt
-            .setName("amount")
-            .setDescription("The amount to withdraw")
-            .setRequired(true)
+        .addSubcommand((sub) =>
+          sub.setName("balance").setDescription("View the current D&D bank balance")
         )
-    )
-    .addSubcommand((sub) =>
-      sub.setName("balance").setDescription("View the current bank balance")
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("clear")
-        .setDescription("Clear all currency from the bank")
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("audit")
-        .setDescription("View the audit log of bank transactions")
-        .addIntegerOption((opt) =>
-          opt
-            .setName("limit")
-            .setDescription("Number of recent entries to show (default: 20, max: 100)")
-            .setMinValue(1)
-            .setMaxValue(100)
+        .addSubcommand((sub) =>
+          sub
+            .setName("clear")
+            .setDescription("Clear all D&D currency from the bank")
         )
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("convert")
-        .setDescription("Convert currency from one type to another")
-        .addStringOption((opt) =>
-          opt
-            .setName("from")
-            .setDescription("Currency to convert from")
-            .setRequired(true)
-            .addChoices(
-              ...CURRENCY_TYPES.map(currency => ({
-                name: `${currency} (${CURRENCY_ABBREVIATIONS[currency]})`,
-                value: currency
-              }))
+        .addSubcommand((sub) =>
+          sub
+            .setName("audit")
+            .setDescription("View the audit log of D&D bank transactions")
+            .addIntegerOption((opt) =>
+              opt
+                .setName("limit")
+                .setDescription("Number of recent entries to show (default: 20, max: 100)")
+                .setMinValue(1)
+                .setMaxValue(100)
             )
         )
-        .addStringOption((opt) =>
-          opt
-            .setName("to")
-            .setDescription("Currency to convert to")
-            .setRequired(true)
-            .addChoices(
-              ...CURRENCY_TYPES.map(currency => ({
-                name: `${currency} (${CURRENCY_ABBREVIATIONS[currency]})`,
-                value: currency
-              }))
+        .addSubcommand((sub) =>
+          sub
+            .setName("convert")
+            .setDescription("Convert D&D currency from one type to another")
+            .addStringOption((opt) =>
+              opt
+                .setName("from")
+                .setDescription("Currency to convert from")
+                .setRequired(true)
+                .addChoices(
+                  ...CURRENCY_TYPES.map(currency => ({
+                    name: `${currency} (${CURRENCY_ABBREVIATIONS[currency]})`,
+                    value: currency
+                  }))
+                )
+            )
+            .addStringOption((opt) =>
+              opt
+                .setName("to")
+                .setDescription("Currency to convert to")
+                .setRequired(true)
+                .addChoices(
+                  ...CURRENCY_TYPES.map(currency => ({
+                    name: `${currency} (${CURRENCY_ABBREVIATIONS[currency]})`,
+                    value: currency
+                  }))
+                )
+            )
+            .addIntegerOption((opt) =>
+              opt
+                .setName("amount")
+                .setDescription("Amount to convert")
+                .setRequired(true)
             )
         )
-        .addIntegerOption((opt) =>
-          opt
-            .setName("amount")
-            .setDescription("Amount to convert")
-            .setRequired(true)
+        .addSubcommand((sub) =>
+          sub
+            .setName("setfee")
+            .setDescription("Set D&D conversion fee rate (requires MANAGE_CHANNELS)")
+            .addNumberOption((opt) =>
+              opt
+                .setName("rate")
+                .setDescription("Fee rate as decimal (0.1 = 10%, 0.05 = 5%)")
+                .setRequired(true)
+                .setMinValue(0)
+                .setMaxValue(1)
+            )
         )
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("setfee")
-        .setDescription("Set conversion fee rate (requires MANAGE_CHANNELS)")
-        .addNumberOption((opt) =>
-          opt
-            .setName("rate")
-            .setDescription("Fee rate as decimal (0.1 = 10%, 0.05 = 5%)")
-            .setRequired(true)
-            .setMinValue(0)
-            .setMaxValue(1)
+        .addSubcommand((sub) =>
+          sub
+            .setName("fees")
+            .setDescription("View current D&D conversion fee settings")
         )
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("fees")
-        .setDescription("View current conversion fee settings")
     );
 
   commands.push(rollCommand);
@@ -1118,26 +1123,32 @@ async function handleTrackerCommand(interaction) {
  * @param {ChatInputCommandInteraction} interaction - Discord interaction
  */
 async function handleBankCommand(interaction) {
+  const subcommandGroup = interaction.options.getSubcommandGroup();
   const subcommand = interaction.options.getSubcommand();
 
-  const subcommandHandlers = {
-    deposit: handleBankDeposit,
-    withdraw: handleBankWithdraw,
-    balance: handleBankBalance,
-    clear: handleBankClear,
-    audit: handleBankAudit,
-    convert: handleBankConvert,
-    setfee: handleBankSetFee,
-    fees: handleBankFees,
-  };
+  // Handle the dnd subcommand group
+  if (subcommandGroup === "dnd") {
+    const subcommandHandlers = {
+      deposit: handleBankDeposit,
+      withdraw: handleBankWithdraw,
+      balance: handleBankBalance,
+      clear: handleBankClear,
+      audit: handleBankAudit,
+      convert: handleBankConvert,
+      setfee: handleBankSetFee,
+      fees: handleBankFees,
+    };
 
-  const handler = subcommandHandlers[subcommand];
-  if (!handler) {
-    await interaction.editReply("This subcommand is not supported.");
-    return;
+    const handler = subcommandHandlers[subcommand];
+    if (!handler) {
+      await interaction.editReply("This D&D bank subcommand is not supported.");
+      return;
+    }
+
+    await handler(interaction);
+  } else {
+    await interaction.editReply("Please specify a currency system (e.g., /bank dnd).");
   }
-
-  await handler(interaction);
 }
 
 /**
