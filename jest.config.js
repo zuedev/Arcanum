@@ -2,6 +2,6 @@ export default {
   testEnvironment: "node",
   collectCoverage: true,
   coverageDirectory: "coverage",
-  testMatch: ["**/source/*.test.js"],
+  testMatch: ["**/*.test.js"],
   verbose: true,
 };
